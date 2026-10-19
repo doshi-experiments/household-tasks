@@ -1,7 +1,5 @@
 import React, {useState} from 'react';
-import {Menu} from '@base-ui/react/menu';
-import {Button, Dialog} from '@doshi-experiments/design-system/react';
-import {DateField} from './controls';
+import {Button, DateField, Dialog, MenuButton} from '@doshi-experiments/design-system/react';
 
 const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const plus = n => {const d = new Date(); d.setHours(12); d.setDate(d.getDate() + n); return d;};
@@ -23,22 +21,11 @@ export function snoozeChoices() {
 export function SnoozeButton({onSnooze, disabled, loading}) {
   const [picking, setPicking] = useState(false), [date, setDate] = useState('');
   return <>
-    <Menu.Root>
-      <Menu.Trigger className="ds-button tasks-snooze" data-size="small" disabled={disabled || loading} aria-busy={loading || undefined}>
-        Snooze
-        <svg viewBox="0 0 16 16" aria-hidden="true" width="14" height="14"><path d="M3.5 6l4.5 4.5L12.5 6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
-      </Menu.Trigger>
-      <Menu.Portal>
-        <Menu.Positioner className="tasks-menu-positioner" sideOffset={6} align="end">
-          <Menu.Popup className="tasks-menu">
-            {snoozeChoices().map(([label, until]) =>
-              <Menu.Item key={label} className="tasks-menu-item" onClick={() => onSnooze(until)}>{label}</Menu.Item>)}
-            <Menu.Separator className="tasks-menu-separator"/>
-            <Menu.Item className="tasks-menu-item" onClick={() => {setDate(iso(plus(1))); setPicking(true);}}>Pick a date…</Menu.Item>
-          </Menu.Popup>
-        </Menu.Positioner>
-      </Menu.Portal>
-    </Menu.Root>
+    <MenuButton label="Snooze" size="small" disabled={disabled} loading={loading} items={[
+      ...snoozeChoices().map(([label, until]) => ({key:label, label, onSelect:() => onSnooze(until)})),
+      'separator',
+      {label:'Pick a date…', onSelect:() => {setDate(iso(plus(1))); setPicking(true);}},
+    ]}/>
     <Dialog open={picking} onOpenChange={setPicking} title="Snooze until" description="It stays on its schedule; this only hides it until then."
       actions={<Button size="small" variant="primary" disabled={!date} onClick={() => {setPicking(false); onSnooze(date);}}>Snooze</Button>}>
       <DateField label="Date" min={iso(plus(1))} value={date} onValueChange={setDate} clearable={false}/>

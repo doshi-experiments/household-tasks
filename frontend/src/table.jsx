@@ -1,8 +1,7 @@
 import React, {useMemo, useState} from 'react';
-import {Button, DataTable} from '@doshi-experiments/design-system/react';
+import {Button, DataTable, Select} from '@doshi-experiments/design-system/react';
 import {SnoozeButton} from './snooze';
 import {AlarmToggle, PRIORITIES, PRIORITY_WORD, dueText} from './tasks';
-import {Select} from './controls';
 
 const SORTERS = {
   due: t => [t.state === 'someday' ? 1 : 0, t.eff_due || '9999', t.schedule.due_time || ''],
@@ -64,8 +63,8 @@ export function TaskTable({tasks, recurring, boot, ops, action, refreshing}) {
           options={[['', 'All'], ['on', 'On'], ['off', 'Off']]}/></td>
         <td><Select label="Filter by person" layout="hidden" size="small" value={f.who} onValueChange={v => set('who', v)}
           options={[['', 'Everyone'], ...boot.people.map(p => [p.id, p.name]), ['anyone', 'Unassigned']]}/></td>
-        <td className="tasks-filter-clear">{filtering && <button type="button" className="tasks-text-button" onClick={() => setF(empty)}
-          aria-label={`Clear filters (showing ${shown.length} of ${tasks.length})`}>Clear filters</button>}</td>
+        <td className="tasks-filter-clear">{filtering && <Button variant="ghost" size="small" onClick={() => setF(empty)}
+          aria-label={`Clear filters (showing ${shown.length} of ${tasks.length})`}>Clear filters</Button>}</td>
       </tr>
     </thead>
     <tbody>

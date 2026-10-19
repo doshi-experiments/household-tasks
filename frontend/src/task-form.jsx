@@ -1,6 +1,5 @@
 import React, {useEffect, useState} from 'react';
-import {Alert, Button, Card, CheckboxField, DataTable, Dialog, PageHeader, TextField} from '@doshi-experiments/design-system/react';
-import {DateField, Select} from './controls';
+import {Alert, Button, Card, CheckboxField, DataTable, DateField, Dialog, PageHeader, Select, TextField, toast} from '@doshi-experiments/design-system/react';
 import {api, del, patch, post} from './api';
 import {useAction} from './hooks';
 import {Pending} from './pending';
@@ -8,7 +7,6 @@ import {ScheduleBuilder} from './schedule-builder';
 import {PRIORITY_WORD, dueText} from './tasks';
 import {STAGES} from './homelab';
 import {celebrate} from './celebrate';
-import {toast} from './toast';
 
 const EMPTY = {title:'', notes:'', category:'Inbox', priority:2, alarm:false, assignee:'', due:'',
   schedule:{kind:'none', rrule:null, interval_n:null, interval_unit:null, flex:'exact', due_time:null}};

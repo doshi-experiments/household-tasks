@@ -1,12 +1,11 @@
 import React, {useState} from 'react';
-import {Alert, Badge, Button, EmptyState, PageHeader} from '@doshi-experiments/design-system/react';
+import {Alert, Badge, Button, EmptyState, PageHeader, Select} from '@doshi-experiments/design-system/react';
 import {patch, post} from './api';
 import {useAction, useResource} from './hooks';
 import {Pending} from './pending';
 import {Board} from './board';
 import {PRIORITY_TONE, dueText} from './tasks';
 import {celebrate} from './celebrate';
-import {Select} from './controls';
 
 export const STAGES = [['idea', 'Ideas'], ['next', 'Next up'], ['doing', 'Doing'], ['done', 'Done']];
 const DONE_DAYS = 14;

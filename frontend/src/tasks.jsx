@@ -1,12 +1,11 @@
 import React, {useState} from 'react';
-import {Alert, Badge, EmptyState, PageHeader, SegmentedControl} from '@doshi-experiments/design-system/react';
+import {Alert, Badge, EmptyState, PageHeader, SegmentedControl, Select, ToggleButton} from '@doshi-experiments/design-system/react';
 import {patch, post} from './api';
 import {useAction, useResource} from './hooks';
 import {Pending} from './pending';
 import {TaskBoard} from './board';
 import {TaskTable} from './table';
 import {celebrate} from './celebrate';
-import {Select} from './controls';
 
 export const PRIORITIES = [[1, 'High'], [2, 'Medium'], [3, 'Low']];
 export const PRIORITY_WORD = {1:'high', 2:'medium', 3:'low'};
@@ -19,11 +18,11 @@ export function dueText(t) {
     {t.snoozed_until && <span className="tasks-snoozed">snoozed</span>}</span>;
 }
 
-/** Shows whether a task's alarm is on and switches it. On is error-tinted with
-    words (never bare red); off is quiet. */
+/** Shows whether a task's alarm is on and switches it: the system's toggle in its
+    error tone, so on is tinted with words (never bare red) and off is quiet. */
 export function AlarmToggle({task:t, onToggle, disabled, loading}) {
-  return <button type="button" className={`tasks-alarm${t.alarm ? ' is-on' : ''}`} aria-pressed={t.alarm}
-    disabled={disabled || loading} aria-busy={loading || undefined} onClick={() => onToggle(!t.alarm)}
+  return <ToggleButton tone="error" size="small" className="tasks-alarm" pressed={t.alarm} onPressedChange={onToggle}
+    disabled={disabled} loading={loading}
     title={t.alarm ? 'Alarm until done is on: tap to turn it off' : 'Turn on “alarm until done”'}
     aria-label={`Alarm until done for ${t.title}`}>
     <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
@@ -32,7 +31,7 @@ export function AlarmToggle({task:t, onToggle, disabled, loading}) {
       {!t.alarm && <path d="M2.5 2.5l11 11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>}
     </svg>
     <span>{t.alarm ? 'Alarm on' : 'Alarm off'}</span>
-  </button>;
+  </ToggleButton>;
 }
 
 const viewKey = kind => `tasks-view-${kind}`;

@@ -1,6 +1,5 @@
 import React, {useEffect, useState} from 'react';
-import {Button, CheckboxField, SegmentedControl, TextField} from '@doshi-experiments/design-system/react';
-import {Select, TimeField} from './controls';
+import {Button, CheckboxField, SegmentedControl, Select, TextField, TimeField} from '@doshi-experiments/design-system/react';
 import {post} from './api';
 
 const DAYS = [['MO', 'Mon'], ['TU', 'Tue'], ['WE', 'Wed'], ['TH', 'Thu'], ['FR', 'Fri'], ['SA', 'Sat'], ['SU', 'Sun']];

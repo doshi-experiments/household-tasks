@@ -1,6 +1,6 @@
 import React, {useEffect, useState} from 'react';
 import {createRoot} from 'react-dom/client';
-import {Alert, Button} from '@doshi-experiments/design-system/react';
+import {Alert, Button, Select, ToastProvider} from '@doshi-experiments/design-system/react';
 import {createAppearanceController} from '@doshi-experiments/design-system/theme';
 import '@doshi-experiments/design-system/tokens.css';
 import '@doshi-experiments/design-system/components.css';
@@ -14,8 +14,6 @@ import {ShoppingList} from './shopping';
 import {History} from './history';
 import {Celebration} from './celebrate';
 import {useMe} from './me';
-import {Select} from './controls';
-import {ToastProvider} from './toast';
 
 const theme = createAppearanceController({storageKey:'tasks-appearance', cookie:false});
 const paintThemeColor = () => document.querySelector('meta[name="theme-color"]')?.setAttribute('content', getComputedStyle(document.documentElement).getPropertyValue('--ds-surface-page').trim());
@@ -43,9 +41,9 @@ function App() {
     <header className="tasks-top">
       <a className="tasks-brand" href="#/one-off">Household tasks</a>
       <div className="tasks-top-controls">
-        {boot.data && <Select label="I am" layout="inline" size="small" value={me} onValueChange={setMe}
+        {boot.data && <Select label="I am" layout="inline" size="small" className="tasks-top-picker" value={me} onValueChange={setMe}
           options={[['', 'Choose…'], ...boot.data.people.map(p => [p.name, p.name])]}/>}
-        <Select label="Appearance" layout="inline" size="small" value={appearance} onValueChange={value => theme.setPreference(value)}
+        <Select label="Appearance" layout="inline" size="small" className="tasks-top-picker" value={appearance} onValueChange={value => theme.setPreference(value)}
           options={[['system', 'System'], ['light', 'Light'], ['dark', 'Dark']]}/>
       </div>
     </header>
