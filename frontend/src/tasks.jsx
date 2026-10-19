@@ -106,9 +106,9 @@ export function TasksPage({kind, boot, me}) {
   return <div className="tasks-stack">
     <PageHeader title={recurring ? 'Recurring tasks' : 'One-off tasks'}
       description={recurring ? 'Chores that come back on a schedule. Done moves each one to its next date.' : 'Things to do once. Drag cards to reorder or change their priority.'}
-      actions={<a className="ds-button" data-variant="primary" href={`#/task/new?from=${kind}`}>New task</a>}/>
+      actions={<a className="ds-button" data-variant="primary" data-size="small" href={`#/task/new?from=${kind}`}>New task</a>}/>
     <div className="tasks-toolbar">
-      <SegmentedControl label="View" value={view} onValueChange={chooseView} options={[['board', 'Board'], ['table', 'Table']]}/>
+      <SegmentedControl size="small" label="View" value={view} onValueChange={chooseView} options={[['board', 'Board'], ['table', 'Table']]}/>
       <Select label="Show" layout="inline" value={period} onValueChange={choosePeriod} className="tasks-period"
         options={PERIODS.map(([p, label]) => [p, `${label} (${inEach[p]})`])}/>
       {(overdue > 0 || alarms > 0) && <span className="tasks-attention" role="status">

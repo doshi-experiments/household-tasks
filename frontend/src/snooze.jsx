@@ -24,7 +24,7 @@ export function SnoozeButton({onSnooze, disabled, loading}) {
   const [picking, setPicking] = useState(false), [date, setDate] = useState('');
   return <>
     <Menu.Root>
-      <Menu.Trigger className="ds-button tasks-snooze" disabled={disabled || loading} aria-busy={loading || undefined}>
+      <Menu.Trigger className="ds-button tasks-snooze" data-size="small" disabled={disabled || loading} aria-busy={loading || undefined}>
         Snooze
         <svg viewBox="0 0 16 16" aria-hidden="true" width="14" height="14"><path d="M3.5 6l4.5 4.5L12.5 6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
       </Menu.Trigger>
@@ -40,7 +40,7 @@ export function SnoozeButton({onSnooze, disabled, loading}) {
       </Menu.Portal>
     </Menu.Root>
     <Dialog open={picking} onOpenChange={setPicking} title="Snooze until" description="It stays on its schedule; this only hides it until then."
-      actions={<Button variant="primary" disabled={!date} onClick={() => {setPicking(false); onSnooze(date);}}>Snooze</Button>}>
+      actions={<Button size="small" variant="primary" disabled={!date} onClick={() => {setPicking(false); onSnooze(date);}}>Snooze</Button>}>
       <DateField label="Date" min={iso(plus(1))} value={date} onValueChange={setDate} clearable={false}/>
     </Dialog>
   </>;

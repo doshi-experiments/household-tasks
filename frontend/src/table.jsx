@@ -84,7 +84,7 @@ export function TaskTable({tasks, recurring, boot, ops, action, refreshing}) {
         <td><AlarmToggle task={t} disabled={action.busy} loading={action.pending === `alarm:${t.id}`} onToggle={on => ops.alarm(t, on)}/></td>
         <td>{t.assignee_name || <span className="tasks-muted">Anyone</span>}</td>
         <td><div className="tasks-actions">
-          <Button variant="primary" loading={action.pending === `done:${t.id}`} disabled={action.busy}
+          <Button size="small" variant="primary" loading={action.pending === `done:${t.id}`} disabled={action.busy}
             onClick={e => {const ev = {currentTarget:e.currentTarget}; ops.done(t, ev);}}>Done</Button>
           {t.state !== 'someday' && <SnoozeButton disabled={action.busy} loading={action.pending === `snooze:${t.id}`}
             onSnooze={until => ops.snooze(t, until)}/>}

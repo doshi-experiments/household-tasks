@@ -53,7 +53,7 @@ function App() {
       {TABS.map(([key, label]) => <a key={key} className="ds-tab" href={`#/${key}`} aria-current={current === key ? 'page' : undefined}>{label}</a>)}
     </nav>
     <main id="main-content" className="tasks-main" tabIndex={-1}>
-      {boot.error && <Alert tone="error" title="Couldn’t reach Tasks" actions={<Button onClick={boot.reload}>Try again</Button>}>{boot.error}</Alert>}
+      {boot.error && <Alert tone="error" title="Couldn’t reach Tasks" actions={<Button size="small" onClick={boot.reload}>Try again</Button>}>{boot.error}</Alert>}
       {boot.loading && !boot.data && <Pending>Loading…</Pending>}
       {boot.data && <>
         {(page === 'one-off' || page === 'recurring') && <TasksPage key={page} kind={page} boot={boot.data} me={me}/>}
@@ -70,6 +70,6 @@ function App() {
 class ErrorBoundary extends React.Component {
   state = {error:false};
   static getDerivedStateFromError() {return {error:true};}
-  render() {return this.state.error ? <main className="tasks-fallback"><Alert tone="error" title="This page couldn’t be shown">Your tasks are safe. Reload to try again.</Alert><Button onClick={() => location.reload()}>Reload</Button></main> : this.props.children;}
+  render() {return this.state.error ? <main className="tasks-fallback"><Alert tone="error" title="This page couldn’t be shown">Your tasks are safe. Reload to try again.</Alert><Button size="small" onClick={() => location.reload()}>Reload</Button></main> : this.props.children;}
 }
 createRoot(document.getElementById('root')).render(<ErrorBoundary><ToastProvider><App/></ToastProvider></ErrorBoundary>);

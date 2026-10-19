@@ -135,7 +135,7 @@ function Card({task:t, recurring, ops, action, handle, overlay}) {
       <AlarmToggle task={t} disabled={action.busy} loading={action.pending === `alarm:${t.id}`} onToggle={on => ops.alarm(t, on)}/>
       {t.state !== 'someday' && <SnoozeButton disabled={action.busy} loading={action.pending === `snooze:${t.id}`}
         onSnooze={until => ops.snooze(t, until)}/>}
-      <Button variant="primary" loading={action.pending === `done:${t.id}`} disabled={action.busy}
+      <Button size="small" variant="primary" loading={action.pending === `done:${t.id}`} disabled={action.busy}
         onClick={e => {const ev = {currentTarget:e.currentTarget}; ops.done(t, ev);}}>Done</Button>
     </div>}
   </article>;

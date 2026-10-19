@@ -1,4 +1,4 @@
-/* Household tasks on Felt (design system 0.7). Shared components bring the
+/* Household tasks on Felt (design system 0.7.1; buttons and toggles use its size="small"). Shared components bring the
    controls and surfaces; this file is layout plus the few pieces the system
    doesn't have yet (board, split button, menu, celebration). Tokens only. */
 * {box-sizing:border-box}
@@ -39,9 +39,6 @@ button,input,select,textarea {font:inherit}
 .tasks-refreshing {opacity:.6; transition:opacity var(--ds-duration-fast)}
 .tasks-fallback {max-width:700px; margin:10vh auto; padding:24px}
 .tasks-pending {display:flex; align-items:center; gap:10px}
-/* Shorter controls than the system's 44px default (asked for 2026-10-19). */
-.ds-button {min-height:36px; padding:6px 16px; line-height:1.25}
-.ds-segment {min-height:36px; padding:6px 14px}
 a.ds-button {text-decoration:none; display:inline-flex; align-items:center; justify-content:center}
 .ds-button[aria-busy="true"] {display:inline-flex; align-items:center; justify-content:center; gap:8px; cursor:progress}
 .ds-button[aria-busy="true"]::before,.tasks-pending::before {content:""; flex:none; width:1em; height:1em; border:2px solid currentColor; border-right-color:transparent; border-radius:50%; animation:tasks-spin .7s linear infinite}
@@ -164,7 +161,7 @@ a.ds-button {text-decoration:none; display:inline-flex; align-items:center; just
 .tasks-snoozed {display:block; font-size:.8125rem; font-weight:400; color:var(--ds-text-secondary)}
 .tasks-card-actions {display:flex; align-items:center; justify-content:flex-end; gap:6px; position:relative; z-index:1}
 .tasks-card-actions > .tasks-alarm {margin-right:auto}
-.tasks-card-actions .ds-button {min-height:34px; padding-block:4px}
+
 /* Homelab: four progress columns; finished cards step back. */
 .tasks-board.tasks-board-stages {grid-template-columns:repeat(4,minmax(0,1fr)); gap:16px}
 .tasks-card-done {box-shadow:none; background:transparent}

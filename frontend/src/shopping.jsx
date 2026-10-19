@@ -55,14 +55,14 @@ export function ShoppingList({boot, me}) {
 
   return <div className="tasks-stack tasks-shopping">
     <PageHeader title="Shopping" description="Tap an item to tick it off. Add several at once with commas."/>
-    <SegmentedControl label="List" value={target} onValueChange={choose}
+    <SegmentedControl size="small" label="List" value={target} onValueChange={choose}
       options={lists.map(l => [l.name, `${l.name}${items ? ` (${items.filter(i => i.list === l.name).length})` : ''}`])}/>
     <form className="tasks-quick-add" onSubmit={add}>
       <input ref={input} className="ds-text-input" aria-label={`Add to ${target}`} placeholder={`Add to ${target}…`} value={title} onChange={e => setTitle(e.target.value)} enterKeyHint="done"/>
-      <Button variant="primary" type="submit" disabled={!title.trim()}>Add</Button>
+      <Button size="small" variant="primary" type="submit" disabled={!title.trim()}>Add</Button>
     </form>
     {error && <Alert tone="warning">{error}</Alert>}
-    {undo && <Alert tone="success" actions={<Button onClick={() => unbuy(undo)}>Undo</Button>}>Bought {undo.title}.</Alert>}
+    {undo && <Alert tone="success" actions={<Button size="small" onClick={() => unbuy(undo)}>Undo</Button>}>Bought {undo.title}.</Alert>}
     {!items && !error && <Pending>Loading the list…</Pending>}
     {items && !items.some(i => i.list === target) && <EmptyState title={`Nothing on ${target}`} description="Add something above or send it to the Telegram bot."/>}
     {items && lists.filter(l => l.name === target).map(l => {
@@ -76,7 +76,7 @@ export function ShoppingList({boot, me}) {
         </li>)}</ul></section>;
     })}
     {bought.some(i => i.list === target) && <section className="tasks-stack-tight">
-      <Button variant="ghost" onClick={() => setShowBought(v => !v)} aria-expanded={showBought}>{showBought ? 'Hide' : 'Show'} recently bought ({bought.filter(i => i.list === target).length})</Button>
+      <Button size="small" variant="ghost" onClick={() => setShowBought(v => !v)} aria-expanded={showBought}>{showBought ? 'Hide' : 'Show'} recently bought ({bought.filter(i => i.list === target).length})</Button>
       {showBought && <ul className="tasks-items tasks-items-bought">{bought.filter(i => i.list === target).map(i => <li key={i.id}>
         <button type="button" className="tasks-item" onClick={() => unbuy(i)} aria-label={`Put ${i.title} back on the list`}>
           <span className="tasks-tick is-done" aria-hidden="true"/><span><span className="tasks-item-title">{i.title}</span>

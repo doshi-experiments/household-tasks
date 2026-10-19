@@ -70,7 +70,7 @@ export function HomelabPage({boot, me}) {
   return <div className="tasks-stack">
     <PageHeader title="Homelab"
       description="Software to build, update or host. Nothing here sends reminders. Drag a card to the next column as it moves along."
-      actions={<a className="ds-button" data-variant="primary" href="#/task/new?from=homelab">New task</a>}/>
+      actions={<a className="ds-button" data-variant="primary" data-size="small" href="#/task/new?from=homelab">New task</a>}/>
     <div className="tasks-toolbar">
       <Select label="Project" layout="inline" value={project} onValueChange={chooseProject} className="tasks-period"
         options={[['', `All projects (${open.length})`], ...projects.map(c => [c.name, `${c.name} (${count(c.name)})`])]}/>
@@ -104,7 +104,7 @@ function LabCard({task:t, handle, overlay, ops, action}) {
       {!done && <Badge tone={PRIORITY_TONE[t.priority]}>{t.priority_label}</Badge>}
     </div>
     {!overlay && !done && stage !== 'idea' && <div className="tasks-card-actions">
-      <Button variant="primary" loading={action.pending === `done:${t.id}`} disabled={action.busy}
+      <Button size="small" variant="primary" loading={action.pending === `done:${t.id}`} disabled={action.busy}
         onClick={e => {const ev = {currentTarget:e.currentTarget}; ops.done(t, ev);}}>Done</Button>
     </div>}
   </article>;

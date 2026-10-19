@@ -87,13 +87,13 @@ export function TaskForm({id, from = 'one-off', boot, me}) {
         <DateField label="Done on (optional)" value={doneOn} onValueChange={setDoneOn} placeholder="Now" hint="Leave empty for now."/>
       </div>
       <div className="tasks-actions">
-        <Button variant="primary" loading={action.pending === 'complete'} disabled={action.busy} onClick={e => complete(e)}>Mark done</Button>
-        {task.repeats && <Button loading={action.pending === 'skip'} disabled={action.busy} onClick={skip}>Skip this one</Button>}
+        <Button size="small" variant="primary" loading={action.pending === 'complete'} disabled={action.busy} onClick={e => complete(e)}>Mark done</Button>
+        {task.repeats && <Button size="small" loading={action.pending === 'skip'} disabled={action.busy} onClick={skip}>Skip this one</Button>}
       </div>
     </div></Card>}
     {task?.status === 'done' && <Card><div className="tasks-row">
       <span>This one is done.</span>
-      <Button loading={action.pending === 'reopen'} disabled={action.busy} onClick={reopen}>Reopen</Button>
+      <Button size="small" loading={action.pending === 'reopen'} disabled={action.busy} onClick={reopen}>Reopen</Button>
     </div></Card>}
     <Card className="tasks-stack-tight">
       <TextField label="Task" value={form.title} onValueChange={title => set({title})} required/>
@@ -122,8 +122,8 @@ export function TaskForm({id, from = 'one-off', boot, me}) {
       <label className="tasks-textarea"><span className="ds-field-label">Notes</span>
         <textarea className="ds-text-input" rows={3} value={form.notes} onChange={e => set({notes:e.target.value})}/></label>
       <div className="tasks-actions">
-        <Button variant="primary" loading={action.pending === 'save'} disabled={action.busy || !form.title.trim()} onClick={save}>{task ? 'Save changes' : 'Add task'}</Button>
-        {task && task.status !== 'archived' && <Button variant="ghost" disabled={action.busy} onClick={() => setConfirmArchive(true)}>Archive</Button>}
+        <Button size="small" variant="primary" loading={action.pending === 'save'} disabled={action.busy || !form.title.trim()} onClick={save}>{task ? 'Save changes' : 'Add task'}</Button>
+        {task && task.status !== 'archived' && <Button size="small" variant="ghost" disabled={action.busy} onClick={() => setConfirmArchive(true)}>Archive</Button>}
       </div>
     </Card>
     {task && !!history.length && <section><h2>History</h2><DataTable aria-label="History">
@@ -132,6 +132,6 @@ export function TaskForm({id, from = 'one-off', boot, me}) {
         <td>{h.kind === 'done' ? 'Done' : 'Skipped'}{h.nominal_due ? ` (due ${h.nominal_due})` : ''}</td><td>{h.done_by || '—'}</td><td>{h.source}</td></tr>)}</tbody>
     </DataTable></section>}
     <Dialog open={confirmArchive} onOpenChange={setConfirmArchive} title="Archive this task?" description="It stops appearing and stops reminding. Its history is kept."
-      actions={<Button variant="primary" onClick={archive} loading={action.pending === 'archive'}>Archive</Button>}/>
+      actions={<Button size="small" variant="primary" onClick={archive} loading={action.pending === 'archive'}>Archive</Button>}/>
   </div>;
 }

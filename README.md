@@ -4,7 +4,7 @@ One place for the household's chores, one-off to-dos and shopping lists, plus a 
 
 - **App:** `https://tasks.<your-tailnet>.ts.net` (Tailscale sidecar) and `http://<TASKS_BIND_ADDR>:8040` on the LAN
 - **Runs on:** a Docker host, as the Dockge stack `/opt/stacks/tasks`
-- **Built with:** Python 3.14, FastAPI and SQLite; React 19 and Vite on the private design system `@doshi-experiments/design-system` 0.7 (Felt, signal red)
+- **Built with:** Python 3.14, FastAPI and SQLite; React 19 and Vite on the private design system `@doshi-experiments/design-system` 0.7.1 (Felt, signal red)
 - **Talks to:** Home Assistant (`HA_URL`), the ingest-bot Telegram bot (`/opt/stacks/ingest-bot`)
 
 ## Using it
@@ -98,7 +98,7 @@ Offline tests (35, no network): build, then
 docker run --rm --network none tasks-tasks python -m unittest discover tests
 ```
 
-The design system is a private package and is not in this repository. Building the frontend needs its tarball at `frontend/vendor/doshi-experiments-design-system-0.7.0.tgz` (from the design-system repo: `git archive` a release, then `npm pack`).
+The design system is a private package and is not in this repository. Building the frontend needs its tarball at `frontend/vendor/doshi-experiments-design-system-0.7.1.tgz` (from the design-system repo: `git archive` a release, then `npm pack`).
 
 Frontend only (from `frontend/`, in the build's Node image):
 
@@ -143,6 +143,7 @@ compose.yaml, Dockerfile, requirements.txt
 
 ## Change log
 
+- **2026-10-19** — Design system 0.7.1: buttons and toggles use its new `size="small"` (36px to the eye, 44px tap area) instead of this app's CSS override, which is gone. Rule from now on: UI changes go into the design system first.
 - **2026-10-19** — Saving a task closes it: Save (or Add) goes back to the task's tab and a toast confirms ("Saved: …", with "Moved to Homelab" or the next date when that applies); archiving does the same. Toasts are Base UI's (`frontend/src/toast.jsx`), bottom right, gone after 4 s.
 - **2026-10-19** — `/calendar-reminders.ics`: upcoming household tasks with a time of their own (not the 17:30 default), for a second HA Remote Calendar labelled Reminder calendar, so HA's existing calendar reminders speak them 30 and 10 minutes before. Tasks gain `own_time`.
 - **2026-10-19** — Alarms go out with the evening feed-the-dogs announcement: the first `/hooks/dog-alarm` call of the day sends every due alarm at the default time (once a day, ledger `dog_alarm_heard`); without an announcement, `SPOKEN_FALLBACK` (20:30) stands in; never in night mode. Alarm tasks with their own time (not 17:30) keep it. `alarm_at` on each task says which.

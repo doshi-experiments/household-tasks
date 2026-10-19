@@ -73,9 +73,9 @@ export function ScheduleBuilder({value, onChange, anchor}) {
     <div className="tasks-phrase">
       <TextField label="Describe it" value={phrase} onValueChange={setPhrase} placeholder="every 30 days from done · every Saturday · seasonally"
         error={phraseError} hint="Type a schedule in words, or set it below." onKeyDown={e => {if (e.key === 'Enter') {e.preventDefault(); readPhrase();}}}/>
-      <Button disabled={!phrase.trim()} onClick={readPhrase}>Use this</Button>
+      <Button size="small" disabled={!phrase.trim()} onClick={readPhrase}>Use this</Button>
     </div>
-    <SegmentedControl label="Repeats" value={value.kind} onValueChange={kind => set({kind, ...(kind === 'rrule' ? {rrule:partsToRule(parts)} : {}),
+    <SegmentedControl size="small" label="Repeats" value={value.kind} onValueChange={kind => set({kind, ...(kind === 'rrule' ? {rrule:partsToRule(parts)} : {}),
       ...(kind === 'interval' && !value.interval_n ? {interval_n:1, interval_unit:'months'} : {})})}
       options={[['none', 'Once'], ['rrule', 'On a calendar'], ['interval', 'After it’s done']]}/>
 
