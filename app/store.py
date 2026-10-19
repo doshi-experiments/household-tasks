@@ -1,0 +1,143 @@
+"""SQLite storage. One connection, every access under one re-entrant lock."""
+from __future__ import annotations
+
+import sqlite3
+import threading
+from contextlib import contextmanager
+
+SCHEMA = """
+PRAGMA foreign_keys=ON;
+CREATE TABLE IF NOT EXISTS categories (
+  name TEXT PRIMARY KEY, sort INTEGER NOT NULL DEFAULT 0, hint TEXT NOT NULL DEFAULT '',
+  archived INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS shopping_lists (
+  name TEXT PRIMARY KEY, sort INTEGER NOT NULL DEFAULT 0, hint TEXT NOT NULL DEFAULT '',
+  archived INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  title TEXT NOT NULL,
+  list TEXT NOT NULL REFERENCES shopping_lists(name) ON UPDATE CASCADE,
+  notes TEXT NOT NULL DEFAULT '',
+  added_by TEXT NOT NULL DEFAULT '',
+  position INTEGER NOT NULL DEFAULT 0,
+  bought_at TEXT, bought_by TEXT NOT NULL DEFAULT '',
+  source TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_items_open ON items(bought_at, list, position);
+CREATE TABLE IF NOT EXISTS tasks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  title TEXT NOT NULL,
+  notes TEXT NOT NULL DEFAULT '',
+  category TEXT NOT NULL DEFAULT 'Inbox' REFERENCES categories(name) ON UPDATE CASCADE,
+  priority INTEGER NOT NULL DEFAULT 2 CHECK (priority BETWEEN 0 AND 3),
+  assignee TEXT,
+  schedule_kind TEXT NOT NULL DEFAULT 'none' CHECK (schedule_kind IN ('none','rrule','interval')),
+  rrule TEXT,
+  anchor_date TEXT,
+  interval_n INTEGER,
+  interval_unit TEXT CHECK (interval_unit IS NULL OR interval_unit IN ('days','weeks','months','years')),
+  flex TEXT NOT NULL DEFAULT 'exact' CHECK (flex IN ('exact','weekend')),
+  due_time TEXT,
+  cursor TEXT,
+  nominal_due TEXT,
+  due TEXT,
+  snoozed_until TEXT,
+  last_done_at TEXT,
+  status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','done','archived')),
+  source TEXT NOT NULL DEFAULT '',
+  added_by TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_tasks_open_due ON tasks(status, due);
+CREATE INDEX IF NOT EXISTS idx_tasks_source ON tasks(source);
+CREATE TABLE IF NOT EXISTS completions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id INTEGER NOT NULL REFERENCES tasks(id),
+  kind TEXT NOT NULL CHECK (kind IN ('done','skip')),
+  done_at TEXT NOT NULL,
+  nominal_due TEXT,
+  done_by TEXT NOT NULL DEFAULT '',
+  source TEXT NOT NULL DEFAULT '',
+  note TEXT NOT NULL DEFAULT '');
+CREATE INDEX IF NOT EXISTS idx_completions_task ON completions(task_id, done_at);
+CREATE TABLE IF NOT EXISTS notifications (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id INTEGER NOT NULL DEFAULT 0,
+  kind TEXT NOT NULL,
+  bucket TEXT NOT NULL,
+  channel TEXT NOT NULL,
+  sent_at TEXT NOT NULL,
+  ok INTEGER NOT NULL DEFAULT 1,
+  detail TEXT NOT NULL DEFAULT '',
+  UNIQUE (task_id, kind, bucket, channel));
+CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS telegram_messages (
+  message_id INTEGER PRIMARY KEY, kind TEXT, bucket TEXT, task_ids TEXT, sent_at TEXT);
+"""
+
+CATEGORIES = [
+    ("Repairs & Maintenance", "Fixing things, servicing appliances, filters, gutters, the car"),
+    ("Installs & Setup", "New things to install, mount, assemble or set up"),
+    ("Cleaning & Recycling", "Cleaning, tidying, decluttering, recycling and garbage runs"),
+    ("Yard & Garden", "Weeding, mowing, plants, watering, the yard and garden"),
+    ("Dogs", "The dogs: meds, grooming, vet, food"),
+    ("Errands & Admin", "Appointments, paperwork, calls, address changes, pick-ups"),
+    ("Finances", "Bills, account checks, taxes, statements"),
+    ("Inbox", "Anything that doesn't fit elsewhere yet"),
+]
+SHOPPING_LISTS = [
+    ("Groceries", "Food, drinks and anything from the grocery store"),
+    ("Everything Else", "Household, hardware, pharmacy, online orders and anything not from a grocery store"),
+]
+
+
+class Store:
+    def __init__(self, path: str):
+        self.lock = threading.RLock()
+        self.db = sqlite3.connect(path, check_same_thread=False, isolation_level=None)
+        self.db.row_factory = sqlite3.Row
+        self.db.execute("PRAGMA journal_mode=WAL")
+        self.db.executescript(SCHEMA)
+        self._migrate()
+        with self.tx():
+            for i, (name, hint) in enumerate(CATEGORIES):
+                self.db.execute("INSERT OR IGNORE INTO categories(name, sort, hint) VALUES (?,?,?)", (name, i, hint))
+            for i, (name, hint) in enumerate(SHOPPING_LISTS):
+                self.db.execute("INSERT OR IGNORE INTO shopping_lists(name, sort, hint) VALUES (?,?,?)", (name, i, hint))
+
+    def _migrate(self):
+        """2026-10-19: priorities are High/Medium/Low (1-3) plus an alarm flag
+        (the old P0 = High + alarm), and the board keeps a manual order."""
+        cols = {r[1] for r in self.db.execute("PRAGMA table_info(tasks)")}
+        with self.tx() as db:
+            if "alarm" not in cols:
+                db.execute("ALTER TABLE tasks ADD COLUMN alarm INTEGER NOT NULL DEFAULT 0")
+                db.execute("UPDATE tasks SET alarm=1, priority=1 WHERE priority=0")
+            if "position" not in cols:
+                db.execute("ALTER TABLE tasks ADD COLUMN position REAL")
+                rows = db.execute("SELECT id FROM tasks ORDER BY priority, coalesce(due, '9999'), lower(title)").fetchall()
+                for i, (tid,) in enumerate(rows, 1):
+                    db.execute("UPDATE tasks SET position=? WHERE id=?", (i * 1024.0, tid))
+
+    @contextmanager
+    def tx(self):
+        with self.lock:
+            self.db.execute("BEGIN IMMEDIATE")
+            try:
+                yield self.db
+            except BaseException:
+                self.db.execute("ROLLBACK")
+                raise
+            self.db.execute("COMMIT")
+
+    def all(self, sql: str, args=()) -> list[dict]:
+        with self.lock:
+            return [dict(r) for r in self.db.execute(sql, args).fetchall()]
+
+    def one(self, sql: str, args=()) -> dict | None:
+        with self.lock:
+            r = self.db.execute(sql, args).fetchone()
+            return dict(r) if r else None
+
+    def close(self):
+        with self.lock:
+            self.db.close()

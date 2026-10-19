@@ -1,0 +1,107 @@
+import React, {useEffect, useState} from 'react';
+import {Alert, Button, Card, CheckboxField, DataTable, Dialog, PageHeader, SelectField, TextField} from '@doshi-experiments/design-system/react';
+import {api, del, patch, post} from './api';
+import {useAction} from './hooks';
+import {Pending} from './pending';
+import {ScheduleBuilder} from './schedule-builder';
+import {PRIORITY_WORD, dueText} from './tasks';
+import {celebrate} from './celebrate';
+
+const EMPTY = {title:'', notes:'', category:'Inbox', priority:2, alarm:false, assignee:'', due:'',
+  schedule:{kind:'none', rrule:null, interval_n:null, interval_unit:null, flex:'exact', due_time:null}};
+const EMPTY_RECURRING = {...EMPTY, schedule:{...EMPTY.schedule, kind:'interval', interval_n:1, interval_unit:'weeks'}};
+const TAB_NAME = {'one-off':'One-off tasks', recurring:'Recurring tasks'};
+
+export function TaskForm({id, from = 'one-off', boot, me}) {
+  const [form, setForm] = useState(id ? null : from === 'recurring' ? EMPTY_RECURRING : EMPTY), [task, setTask] = useState(null), [history, setHistory] = useState([]);
+  const [loadError, setLoadError] = useState(''), [confirmArchive, setConfirmArchive] = useState(false), [doneOn, setDoneOn] = useState('');
+  const action = useAction();
+  const load = async () => {
+    try {
+      const r = await api(`tasks/${id}`);
+      const t = r.task;
+      setTask(t); setHistory(r.completions);
+      setForm({title:t.title, notes:t.notes, category:t.category, priority:t.priority, alarm:t.alarm, assignee:t.assignee || '',
+        due:t.due || '', schedule:{...t.schedule}});
+    } catch (e) {setLoadError(e.message);}
+  };
+  useEffect(() => {if (id) load();}, [id]);
+  if (loadError) return <Alert tone="error" title="Couldn’t open this task">{loadError}</Alert>;
+  if (!form) return <Pending>Loading task…</Pending>;
+  const set = patchObj => setForm(f => ({...f, ...patchObj}));
+
+  const save = () => action.run(async () => {
+    const body = {title:form.title, notes:form.notes, category:form.category, priority:PRIORITY_WORD[form.priority], alarm:form.alarm,
+      assignee:form.assignee || null, schedule:form.schedule};
+    // Changing the date moves the next occurrence; leave it out unless it changed.
+    if (!task || form.due !== (task.due || '')) body.due = form.due || null;
+    const r = task ? await patch(`tasks/${task.id}`, body) : await post('tasks', {...body, source:'web', added_by:me});
+    if (!task) {location.hash = `#/task/${r.task.id}?from=${r.task.repeats ? 'recurring' : 'one-off'}`; return;}
+    setTask(r.task); action.setNotice(`Saved. ${r.task.repeats ? `Next: ${r.task.due_text}.` : ''}`);
+  }, 'save');
+  const complete = event => action.run(async () => {
+    const ev = {currentTarget:event?.currentTarget};
+    try {
+      const r = await post(`tasks/${task.id}/complete`, {done_by:me, source:'web', occurrence:task.occurrence,
+        ...(doneOn ? {done_at:`${doneOn}T12:00:00`} : {})});
+      celebrate(ev);
+      action.setNotice(r.task.closed ? 'Done.' : `Done. Next one ${r.task.due_text}.`);
+    } catch (e) {if (e.status !== 409) throw e; action.setNotice('That one was already done.');}
+    setDoneOn(''); await load();
+  }, 'complete');
+  const skip = () => action.run(async () => {
+    const r = await post(`tasks/${task.id}/skip`, {done_by:me, source:'web', occurrence:task.occurrence});
+    action.setNotice(`Skipped. Next one ${r.task.due_text}.`); await load();
+  }, 'skip');
+  const archive = () => action.run(async () => {await del(`tasks/${task.id}`); location.hash = `#/${from}`;}, 'archive');
+
+  const open = task?.status === 'open';
+  return <div className="tasks-stack">
+    <PageHeader eyebrow={<a href={`#/${from}`}>← {TAB_NAME[from] || 'Tasks'}</a>} title={task ? task.title : from === 'recurring' ? 'New recurring task' : 'New task'}
+      description={task && <>{task.status === 'open' ? dueText(task) : `Status: ${task.status}`}{task.repeats ? ` · ${task.schedule_text}` : ''}</>}/>
+    {action.error && <Alert tone="error">{action.error}</Alert>}
+    {action.notice && <Alert tone="success">{action.notice}</Alert>}
+    {open && <Card><div className="tasks-row">
+      <div className="tasks-inline">
+        <TextField label="Done on (optional)" type="date" value={doneOn} onValueChange={setDoneOn} hint="Leave empty for now."/>
+      </div>
+      <div className="tasks-actions">
+        <Button variant="primary" loading={action.pending === 'complete'} disabled={action.busy} onClick={e => complete(e)}>Mark done</Button>
+        {task.repeats && <Button loading={action.pending === 'skip'} disabled={action.busy} onClick={skip}>Skip this one</Button>}
+      </div>
+    </div></Card>}
+    <Card className="tasks-stack-tight">
+      <TextField label="Task" value={form.title} onValueChange={title => set({title})} required/>
+      <div className="tasks-grid">
+        <SelectField label="Category" value={form.category} onValueChange={category => set({category})}>
+          {boot.categories.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+        </SelectField>
+        <SelectField label="Priority" value={String(form.priority)} onValueChange={v => set({priority:Number(v)})}
+          hint={form.priority === 1 ? 'High also gets a daily push once it’s overdue.' : 'Shows in the morning and evening summaries.'}>
+          <option value="1">High</option><option value="2">Medium</option><option value="3">Low</option>
+        </SelectField>
+        <SelectField label="Who" value={form.assignee} onValueChange={assignee => set({assignee})} hint="Assigned tasks notify that person; others notify everyone.">
+          <option value="">Anyone</option>{boot.people.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </SelectField>
+        <TextField label={form.schedule.kind === 'none' ? 'Due date' : 'Next due'} type="date" value={form.due || ''} onValueChange={due => set({due})}
+          hint={form.schedule.kind === 'none' ? 'Leave empty for “someday”.' : task ? 'Change it to move the next one.' : 'Leave empty to start today.'}/>
+      </div>
+      <CheckboxField label="Alarm until done" checked={form.alarm} onCheckedChange={alarm => set({alarm})}
+            hint="Pushes every day at its time and is read out on the speakers until someone marks it done."/>
+      <ScheduleBuilder value={form.schedule} onChange={schedule => set({schedule})} anchor={form.due || task?.schedule.anchor_date}/>
+      <label className="tasks-textarea"><span className="ds-field-label">Notes</span>
+        <textarea className="ds-text-input" rows={3} value={form.notes} onChange={e => set({notes:e.target.value})}/></label>
+      <div className="tasks-actions">
+        <Button variant="primary" loading={action.pending === 'save'} disabled={action.busy || !form.title.trim()} onClick={save}>{task ? 'Save changes' : 'Add task'}</Button>
+        {task && task.status !== 'archived' && <Button variant="ghost" disabled={action.busy} onClick={() => setConfirmArchive(true)}>Archive</Button>}
+      </div>
+    </Card>
+    {task && !!history.length && <section><h2>History</h2><DataTable aria-label="History">
+      <thead><tr><th>When</th><th>What</th><th>Who</th><th>Via</th></tr></thead>
+      <tbody>{history.map(h => <tr key={h.id}><td className="tasks-nowrap">{h.done_at.slice(0, 16).replace('T', ' ')}</td>
+        <td>{h.kind === 'done' ? 'Done' : 'Skipped'}{h.nominal_due ? ` (due ${h.nominal_due})` : ''}</td><td>{h.done_by || '—'}</td><td>{h.source}</td></tr>)}</tbody>
+    </DataTable></section>}
+    <Dialog open={confirmArchive} onOpenChange={setConfirmArchive} title="Archive this task?" description="It stops appearing and stops reminding. Its history is kept."
+      actions={<Button variant="primary" onClick={archive} loading={action.pending === 'archive'}>Archive</Button>}/>
+  </div>;
+}

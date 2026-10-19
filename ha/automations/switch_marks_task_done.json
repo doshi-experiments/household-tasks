@@ -1,0 +1,22 @@
+{
+    "id": "tasks_switch_marks_task_done",
+    "alias": "Tasks – Switch off marks the task done",
+    "description": "Keeps an existing on/off helper working as a 'done' button for one alarm task. The Tasks service turns <SWITCH_ENTITY> on when the task comes due and off when it is done or snoozed (HA_SWITCH_TASKS in .env). Turning it off by hand marks the current occurrence done; the service's own off-flips run as its HA user and are ignored, so a snooze never counts as done.",
+    "triggers": [
+        {"trigger": "state", "entity_id": "<SWITCH_ENTITY>", "from": "on", "to": "off"}
+    ],
+    "conditions": [
+        {"condition": "template", "value_template": "{{ trigger.to_state.context.user_id != '<TASKS_HA_USER_ID>' }}"}
+    ],
+    "actions": [
+        {
+            "action": "rest_command.tasks_complete",
+            "data": {
+                "task_id": "<TASK_ID>",
+                "done_by": "{{ states.person | selectattr('attributes.user_id', 'eq', trigger.to_state.context.user_id) | map(attribute='name') | first | default('switch') }}",
+                "source": "switch"
+            }
+        }
+    ],
+    "mode": "single"
+}

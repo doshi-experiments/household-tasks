@@ -1,0 +1,35 @@
+{
+    "alias": "Tasks – Announce",
+    "description": "Speaks a reminder from the Household Tasks service (the spoken fallback when the evening reminder didn't run). verbatim=true reads the text exactly (used whenever an alarm task is included); otherwise an announcer script may shorten it. Silent while any of the quiet switches is on. Replace the <...> placeholders with your own entities.",
+    "mode": "queued",
+    "fields": {
+        "text": {"name": "Text", "required": true, "selector": {"text": {"multiline": true}}},
+        "verbatim": {"name": "Read exactly", "default": false, "selector": {"boolean": {}}}
+    },
+    "sequence": [
+        {"condition": "state", "entity_id": "<NIGHT_MODE_SWITCH>", "state": "off"},
+        {"condition": "state", "entity_id": "<HOUSE_EMPTY_SWITCH>", "state": "off"},
+        {"condition": "state", "entity_id": "<VACATION_SWITCH>", "state": "off"},
+        {
+            "if": [{"condition": "template", "value_template": "{{ verbatim | default(false) | bool }}"}],
+            "then": [
+                {
+                    "action": "media_player.play_media",
+                    "continue_on_error": true,
+                    "target": {"entity_id": "<SPEAKERS>"},
+                    "data": {"announce": true, "media": {
+                        "media_content_id": "media-source://tts/<TTS_ENGINE>?message={{ text | urlencode }}",
+                        "media_content_type": "music", "metadata": {}}}
+                }
+            ],
+            "else": [
+                {
+                    "action": "tts.speak",
+                    "continue_on_error": true,
+                    "target": {"entity_id": "<TTS_ENGINE>"},
+                    "data": {"media_player_entity_id": "<SPEAKERS>", "message": "{{ text }}"}
+                }
+            ]
+        }
+    ]
+}

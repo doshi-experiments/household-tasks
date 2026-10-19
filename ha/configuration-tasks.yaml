@@ -1,0 +1,55 @@
+# Household Tasks: the parts of Home Assistant's configuration.yaml this stack needs.
+# <TASKS_HOST> is the Docker host's LAN address (TASKS_BIND_ADDR in .env).
+# Add the rest_command entries under your existing single `rest_command:` key,
+# and the sensor under `sensor:`. secrets.yaml needs:
+#   tasks_api_token: "Bearer <TASKS_API_TOKEN from .env>"
+
+rest_command:
+  # 4-6. Household Tasks service (docker host, port 8040; /opt/stacks/tasks)
+  # 4. Phone notification buttons (TASK_DONE_<id>_<date>) -> mark done / snooze
+  tasks_action:
+    url: http://<TASKS_HOST>:8040/hooks/ha-action
+    method: POST
+    headers:
+      Authorization: !secret tasks_api_token
+    content_type: application/json
+    payload: '{{ {"action": action, "device": device | default("")} | to_json }}'
+
+  # 5. The feed-dogs reminder pulls the text to speak from here
+  tasks_dog_alarm:
+    url: http://<TASKS_HOST>:8040/hooks/dog-alarm
+    method: POST
+    headers:
+      Authorization: !secret tasks_api_token
+    content_type: application/json
+    payload: "{}"
+
+  # 6. Mark a task's current occurrence done (Dog Meds switch, NFC tags, any automation)
+  tasks_complete:
+    url: "http://<TASKS_HOST>:8040/api/tasks/{{ task_id }}/complete"
+    method: POST
+    headers:
+      Authorization: !secret tasks_api_token
+    content_type: application/json
+    payload: '{{ {"done_by": done_by | default("switch"), "source": source | default("switch")} | to_json }}'
+
+# ── Sensors ────────────────────────────────────────────────────────────────
+sensor:
+  # Household Tasks counts for the dashboard. State = tasks due now;
+  # attributes carry overdue / this weekend / critical counts and the next 5.
+  - platform: rest
+    name: Household tasks
+    unique_id: household_tasks_summary
+    resource: http://<TASKS_HOST>:8040/api/summary
+    headers:
+      Authorization: !secret tasks_api_token
+    scan_interval: 300
+    value_template: "{{ value_json.due_today }}"
+    json_attributes:
+      - overdue
+      - due_today
+      - this_weekend
+      - p0_open
+      - open
+      - next_up
+      - generated_at

@@ -1,0 +1,27 @@
+{
+    "id": "tasks_notification_actions",
+    "alias": "Tasks \u2013 Notification actions",
+    "description": "Forwards Done / Snooze taps on Household Tasks phone notifications (TASK_DONE_<id>_<date>, TASK_SNOOZE_<id>_<date>) to the Tasks service, which marks that exact occurrence and ignores stale taps. Sends the tapping person's HA user id so the service can record who did it (HA_DEVICE_PEOPLE in /opt/stacks/tasks/.env).",
+    "triggers": [
+        {
+            "trigger": "event",
+            "event_type": "mobile_app_notification_action"
+        }
+    ],
+    "conditions": [
+        {
+            "condition": "template",
+            "value_template": "{{ (trigger.event.data.action | default('') | string).startswith('TASK_') }}"
+        }
+    ],
+    "actions": [
+        {
+            "action": "rest_command.tasks_action",
+            "data": {
+                "action": "{{ trigger.event.data.action }}",
+                "device": "{{ trigger.event.context.user_id or '' }}"
+            }
+        }
+    ],
+    "mode": "queued"
+}

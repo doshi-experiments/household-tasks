@@ -1,0 +1,20 @@
+# Dashboard: Edit dashboard -> Add card -> Manual, paste one of these.
+
+# 1) Upcoming tasks (Calendar Card Pro, installed via HACS)
+type: custom:calendar-card-pro
+title: Household tasks
+entities:
+  - entity: calendar.household_tasks
+days_to_show: 14
+show_past_events: false
+tap_action:
+  action: url
+  url_path: https://tasks.<your-tailnet>.ts.net/
+
+# 2) Counts tile (needs the REST sensor from configuration-snippet.yaml)
+# type: markdown
+# content: >
+#   **{{ state_attr('sensor.household_tasks','overdue') }}** overdue ·
+#   **{{ state_attr('sensor.household_tasks','due_today') }}** due now ·
+#   **{{ state_attr('sensor.household_tasks','this_weekend') }}** this weekend
+#   {% if state_attr('sensor.household_tasks','p0_open') | int(0) > 0 %} · ⚠️ critical due{% endif %}

@@ -1,0 +1,20 @@
+# secrets and live data
+.env
+.env.*
+data/
+*.db
+*.db-wal
+*.db-shm
+# backups made before edits
+*.bak*
+# build output and dependencies
+frontend/node_modules/
+frontend/dist/
+__pycache__/
+*.pyc
+# household data and full HA config copies stay on this host
+migration-plan.md
+ha/configuration.yaml
+ha/local/
+# the design system is a private package; its tarball is never committed
+frontend/vendor/*.tgz

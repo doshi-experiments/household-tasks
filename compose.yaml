@@ -1,0 +1,50 @@
+services:
+  tasks:
+    build: .
+    container_name: tasks
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      TZ: ${TASKS_TZ:-UTC}
+    mem_limit: 300m
+    # Published on the host's LAN address only (TASKS_BIND_ADDR in .env): Home
+    # Assistant and ingest-bot call the hooks and API, and HA reads
+    # calendar.ics and /api/summary from here.
+    ports:
+      - "${TASKS_BIND_ADDR:-127.0.0.1}:8040:8040"
+    volumes:
+      - ./data:/data
+    networks:
+      default:
+        aliases:
+          # The sidecar's hostname is "tasks", so inside it that name resolves
+          # to the sidecar itself. It proxies to this alias instead.
+          - tasks-app
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys;sys.exit(0 if urllib.request.urlopen('http://localhost:8040/api/health',timeout=3).status==200 else 1)\""]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  # https://tasks.<your-tailnet>.ts.net (tailnet only, never Funnel).
+  # One-time: log the sidecar in (for example from a throwaway tailscaled
+  # container on the same state volume, with TS_AUTH_ONCE=true), then
+  #   docker exec tasks-tailscale tailscale serve --bg http://tasks-app:8040
+  tasks-tailscale:
+    image: tailscale/tailscale:latest
+    container_name: tasks-tailscale
+    hostname: tasks
+    restart: unless-stopped
+    environment:
+      - TS_STATE_DIR=/var/lib/tailscale
+      - TS_AUTH_ONCE=true
+    volumes:
+      - tailscale_data:/var/lib/tailscale
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - net_admin
+      - sys_module
+
+volumes:
+  tailscale_data:

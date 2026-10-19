@@ -1,0 +1,179 @@
+/* Household tasks on Felt (design system 0.6). Shared components bring the
+   controls and surfaces; this file is layout plus the few pieces the system
+   doesn't have yet (board, split button, menu, celebration). Tokens only. */
+* {box-sizing:border-box}
+body {margin:0; background-color:var(--ds-surface-page); color:var(--ds-text); font:400 1rem/1.55 var(--ds-font-body); font-variation-settings:var(--ds-font-body-variation)}
+h2,p {margin-top:0}
+a {color:var(--ds-action-link)}
+button,input,select,textarea {font:inherit}
+.ds-visually-hidden {position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap}
+
+/* Frame: brand and controls, then the local tabs, then the page. */
+.tasks-app {max-width:var(--ds-page-width, 1240px); margin:0 auto; padding:0 32px 64px}
+.tasks-top {display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px 24px; padding:24px 0 12px}
+.tasks-brand {font:600 1.125rem/1.2 var(--ds-font-display); letter-spacing:-.02em; color:var(--ds-text); text-decoration:none}
+.tasks-top-controls {display:flex; flex-wrap:wrap; align-items:center; gap:12px 20px}
+.tasks-me {display:flex; align-items:center; gap:10px; font-weight:600; font-size:.875rem}
+.tasks-me .ds-select-input {width:auto; min-width:120px}
+.tasks-schedule .ds-segmented {justify-self:start}
+.tasks-tabs {margin-bottom:8px}
+.tasks-main {outline:none}
+.tasks-main .ds-page-header {padding:24px 0 8px}
+.tasks-main .ds-page-header h1 {font-size:var(--ds-text-large)}
+
+.tasks-stack {display:grid; gap:24px}
+.tasks-stack-tight {display:grid; gap:12px}
+.tasks-row {display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px 16px}
+.tasks-toolbar {display:flex; align-items:center; flex-wrap:wrap; gap:12px 20px}
+.tasks-toolbar-count {margin-left:auto}
+.tasks-period {display:flex; align-items:center; gap:10px; font-weight:600; font-size:.875rem; color:var(--ds-text-secondary)}
+.tasks-period .ds-select-input {width:auto; min-width:190px; color:var(--ds-text); font-weight:500}
+.tasks-attention {color:var(--ds-error-text); font-weight:600; font-size:.875rem}
+.tasks-actions {display:flex; align-items:center; flex-wrap:wrap; gap:8px}
+.tasks-metrics {display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:16px 24px}
+.tasks-grid {display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px 24px; align-items:start}
+.tasks-inline {display:flex; align-items:flex-end; gap:16px; flex-wrap:wrap}
+.tasks-inline > .ds-field {min-width:120px}
+.tasks-inline-note {flex-basis:100%; margin:0}
+.tasks-muted {color:var(--ds-text-secondary); font-size:.875rem}
+.tasks-overdue {color:var(--ds-error-text); font-weight:600}
+.tasks-due {font-weight:600}
+.tasks-field-error {color:var(--ds-error-text); margin:0}
+.tasks-refreshing {opacity:.6; transition:opacity var(--ds-duration-fast)}
+.tasks-fallback {max-width:700px; margin:10vh auto; padding:24px}
+.tasks-pending {display:flex; align-items:center; gap:10px}
+a.ds-button {text-decoration:none; display:inline-flex; align-items:center; justify-content:center}
+.ds-button[aria-busy="true"] {display:inline-flex; align-items:center; justify-content:center; gap:8px; cursor:progress}
+.ds-button[aria-busy="true"]::before,.tasks-pending::before {content:""; flex:none; width:1em; height:1em; border:2px solid currentColor; border-right-color:transparent; border-radius:50%; animation:tasks-spin .7s linear infinite}
+@keyframes tasks-spin {to {rotate:360deg}}
+
+/* Schedule builder: a recessed well; Weekend and Time line up as two fields. */
+/* The schedule is a stitched group at the same level as the rest of the form;
+   only its fields are pressed in. */
+.tasks-schedule {margin:8px 0 0}
+.tasks-phrase {display:flex; align-items:flex-start; gap:12px}
+.tasks-phrase > .ds-field {flex:1}
+.tasks-phrase > .ds-button {margin-top:1.95em}
+.tasks-chips {display:flex; flex-wrap:wrap; gap:4px 16px; border:0; padding:0; margin:0}
+.tasks-chips > legend {font-weight:600; margin-bottom:4px; padding:0}
+.tasks-when {display:grid; grid-template-columns:minmax(0,1.4fr) minmax(0,1fr); gap:16px 24px; align-items:start}
+.tasks-when-flex {border:0; margin:0; padding:0; min-width:0; display:grid; gap:6px}
+.tasks-schedule .tasks-when-flex > legend {padding:0; margin-bottom:6px; color:var(--ds-text-secondary); font:600 .875rem/1.5 var(--ds-font-body)}
+.tasks-when-flex .ds-checkbox-label {min-height:44px}
+.tasks-textarea {display:grid; gap:6px}
+.tasks-textarea textarea {resize:vertical; min-height:4.5em}
+
+/* Table: a filter under every heading; category and priority edit in place. */
+.tasks-table td {vertical-align:top}
+.tasks-table th, .tasks-table td {white-space:normal}
+.tasks-table td:first-child {white-space:nowrap}
+.tasks-filter-row td {padding-top:4px; padding-bottom:12px; position:sticky; top:44px; background:var(--ds-surface-raised)}
+.tasks-filter-row .ds-select-input,.tasks-filter-row .ds-text-input {min-height:40px; padding:6px 12px; font-size:.875rem; min-width:120px}
+.tasks-title-cell {min-width:220px}
+.tasks-inline-select {min-height:40px; padding:6px 8px 6px 12px; font-size:.875rem; min-width:130px; background-color:transparent; border-color:transparent; box-shadow:none}
+.tasks-inline-select:is(:hover,:focus-visible) {background-color:var(--ds-surface-inset); border-color:var(--ds-border)}
+.tasks-category-select {min-width:196px}
+.tasks-table td:first-child {min-width:120px}
+.tasks-table .tasks-actions {flex-wrap:nowrap}
+.tasks-table-empty {text-align:center; padding:32px 16px; color:var(--ds-text-secondary)}
+.tasks-sort {display:inline-flex; align-items:center; gap:6px; padding:4px 0; border:0; background:none; color:inherit; font:inherit; font-weight:600; cursor:pointer}
+.tasks-sort svg {opacity:.35}
+.tasks-sort svg.is-on,.tasks-sort:hover svg {opacity:1}
+.tasks-sort:focus-visible {outline:3px solid var(--ds-focus); outline-offset:2px; border-radius:6px}
+.tasks-filter-note {font-size:.8125rem; vertical-align:middle !important}
+
+/* Snooze: one raised secondary pill that opens the menu. */
+.tasks-snooze {display:inline-flex; align-items:center; gap:6px; min-height:40px; padding-inline:16px 12px}
+.tasks-snooze[data-popup-open] {box-shadow:var(--ds-shadow-pressed); background:var(--ds-surface-inset)}
+.tasks-menu-positioner {z-index:150}
+.tasks-menu {min-width:180px; padding:6px; border-radius:var(--ds-radius-control); background:var(--ds-surface-overlay); color:var(--ds-text); box-shadow:var(--ds-shadow-overlay); outline:none}
+.tasks-menu-item {display:flex; align-items:center; min-height:44px; padding:0 14px; border-radius:10px; cursor:pointer; outline:none; font-weight:500}
+.tasks-menu-item[data-highlighted] {background:var(--ds-selection)}
+.tasks-menu-separator {height:0; margin:6px 4px; border-top:1.5px dashed var(--ds-stitch)}
+
+/* Board: three priority columns of raised felt cards. */
+.tasks-board {display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:20px; align-items:start}
+.tasks-column {min-width:0; padding:14px; border-radius:var(--ds-radius-container); background:var(--ds-surface-inset); box-shadow:var(--ds-shadow-pressed); transition:background var(--ds-duration-fast)}
+.tasks-column.is-over {background:var(--ds-selection)}
+.tasks-column-head {display:flex; align-items:baseline; justify-content:space-between; margin:2px 6px 12px; font:500 var(--ds-text-card)/1.2 var(--ds-font-display); letter-spacing:-.02em}
+.tasks-column-list {list-style:none; margin:0; padding:0; display:grid; gap:12px; min-height:80px}
+.tasks-column-empty {display:grid; place-items:center; min-height:80px; border:1.5px dashed var(--ds-stitch); border-radius:var(--ds-radius-control); color:var(--ds-text-secondary); font-size:.875rem}
+.tasks-column-list > li.is-dragging {opacity:.35}
+.tasks-card {position:relative; display:grid; gap:8px; padding:12px 14px 10px 8px; border-radius:18px; background:var(--ds-surface-raised); box-shadow:var(--ds-shadow-raised)}
+.tasks-card::after {content:""; position:absolute; inset:5px; border:1.5px dashed var(--ds-stitch); border-radius:14px; pointer-events:none; opacity:.7}
+.tasks-card.is-overlay {cursor:grabbing; rotate:1.5deg; box-shadow:var(--ds-shadow-overlay)}
+.tasks-card-overdue {box-shadow:var(--ds-shadow-raised), inset 4px 0 0 var(--ds-error-text)}
+.tasks-card-top {display:flex; align-items:flex-start; gap:6px}
+.tasks-card-text {min-width:0; flex:1; display:grid; gap:4px}
+.tasks-card-title {color:var(--ds-text); font-weight:600; text-decoration:none; overflow-wrap:anywhere; line-height:1.35}
+.tasks-card-title:hover {text-decoration:underline; color:var(--ds-action-link)}
+.tasks-card-meta {display:flex; flex-wrap:wrap; gap:2px 10px; font-size:.8125rem; color:var(--ds-text-secondary)}
+.tasks-card-meta {column-gap:14px}
+.tasks-card-meta > :first-child {color:var(--ds-text); font-weight:500}
+.tasks-snoozed {display:block; font-size:.8125rem; font-weight:400; color:var(--ds-text-secondary)}
+.tasks-card-actions {display:flex; justify-content:flex-end; gap:6px; position:relative; z-index:1}
+.tasks-card-actions .ds-button {min-height:40px; padding-inline:16px}
+.tasks-handle {flex:none; display:grid; place-items:center; width:32px; height:44px; margin-top:-8px; border:0; border-radius:10px; background:transparent; color:var(--ds-text-secondary); cursor:grab; touch-action:none; position:relative; z-index:1}
+.tasks-handle:hover {background:var(--ds-surface-inset); color:var(--ds-text)}
+.tasks-handle:focus-visible {outline:3px solid var(--ds-focus); outline-offset:2px}
+
+/* Shopping: large targets for use in a store. */
+.tasks-shopping {max-width:640px}
+.tasks-quick-add {display:flex; gap:8px; position:sticky; top:0; z-index:5; padding:8px 0}
+.tasks-quick-add > input {flex:1; min-height:48px; font-size:1.0625rem}
+.tasks-items {list-style:none; margin:0; padding:0; display:grid}
+.tasks-items > li {display:flex; align-items:stretch; border-bottom:1.5px dashed var(--ds-stitch)}
+.tasks-item {flex:1; display:flex; align-items:center; gap:14px; min-height:52px; padding:8px 4px; background:none; border:0; color:inherit; text-align:left; cursor:pointer}
+.tasks-item:active {background:var(--ds-selection)}
+.tasks-item-title {font-size:1.0625rem}
+.tasks-tick {flex:none; width:26px; height:26px; border-radius:50%; background:var(--ds-surface-inset); box-shadow:var(--ds-shadow-pressed)}
+.tasks-tick.is-done {background:var(--ds-action-primary)}
+.tasks-items-bought .tasks-item-title {text-decoration:line-through; color:var(--ds-text-secondary)}
+.tasks-item-remove {flex:none; width:48px; background:none; border:0; color:var(--ds-text-secondary); font-size:1.4rem; cursor:pointer}
+
+/* Celebration: never takes a click, always gone within ~2 s. */
+.tasks-celebrate {position:fixed; inset:0; z-index:200; pointer-events:none; overflow:hidden}
+.tasks-celebrate svg {fill:var(--ds-action-primary)}
+.tasks-paw {position:absolute; width:46px; height:46px; opacity:0; rotate:72deg; fill:var(--ds-text) !important;
+  animation:tasks-paw 1.7s var(--ds-ease) both; animation-delay:calc(var(--i) * 110ms)}
+.tasks-paw:nth-child(odd) {fill:var(--ds-action-primary) !important}
+@keyframes tasks-paw {0% {opacity:0; scale:.4} 18% {opacity:.9; scale:1} 70% {opacity:.9} 100% {opacity:0; scale:1}}
+.tasks-dog {position:absolute; right:8%; bottom:0; width:min(220px,46vw); translate:0 105%; animation:tasks-dog 2s var(--ds-ease-spring, var(--ds-ease)) both}
+.tasks-dog .tasks-dog-head,.tasks-dog .tasks-dog-body {fill:#C98F5A}
+.tasks-dog .tasks-dog-ear {fill:#7A4E2C}
+.tasks-dog .tasks-dog-muzzle {fill:#F1E3CF}
+.tasks-dog .tasks-dog-eye,.tasks-dog .tasks-dog-nose {fill:#262624}
+.tasks-dog .tasks-dog-shine {fill:#FFFFFF}
+.tasks-dog .tasks-dog-tongue {fill:var(--ds-action-primary)}
+.tasks-dog .tasks-dog-tail path {stroke:#7A4E2C}
+.tasks-dog-tail {transform-origin:128px 112px; animation:tasks-wag .22s ease-in-out infinite alternate}
+@keyframes tasks-dog {0% {translate:0 105%} 22% {translate:0 8%} 30% {translate:0 14%} 78% {translate:0 14%} 100% {translate:0 105%}}
+@keyframes tasks-wag {from {rotate:-14deg} to {rotate:18deg}}
+.tasks-bit {position:absolute; left:var(--x); top:var(--y); width:26px; height:26px; margin:-13px 0 0 -13px; opacity:0;
+  animation:tasks-burst 1.3s cubic-bezier(.15,.8,.3,1) both; animation-delay:calc(var(--i) * 18ms)}
+.tasks-bit:nth-child(3n+1) {width:34px; height:17px; fill:var(--ds-text-secondary) !important}
+@keyframes tasks-burst {0% {opacity:0; translate:0 0; scale:.3; rotate:0deg} 15% {opacity:1} 70% {opacity:1}
+  100% {opacity:0; translate:var(--dx) calc(var(--dy) + 60px); scale:1; rotate:var(--r)}}
+@media(prefers-reduced-motion:reduce){
+  .ds-button[aria-busy="true"]::before,.tasks-pending::before {animation:none}
+  .tasks-paw,.tasks-dog,.tasks-dog-tail,.tasks-bit {animation:tasks-fade 1.2s ease both !important; translate:none; rotate:none}
+  .tasks-paw:not(:nth-child(4)),.tasks-bit:not(:first-child) {display:none}
+  .tasks-paw:nth-child(4) {left:calc(50% - 23px) !important; bottom:20% !important}
+  .tasks-bit:first-child {left:50%; top:50%}
+  .tasks-dog {translate:0 10%}
+  @keyframes tasks-fade {0%,100% {opacity:0} 25%,70% {opacity:1}}
+}
+
+@media(max-width:900px){
+  .tasks-board {grid-template-columns:minmax(0,1fr)}
+  .tasks-metrics {grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:700px){
+  .tasks-app {padding:0 16px 48px}
+  .tasks-grid,.tasks-when {grid-template-columns:minmax(0,1fr)}
+  .tasks-phrase {flex-direction:column; align-items:stretch}
+  .tasks-phrase > .ds-button {margin-top:0}
+  .tasks-main .ds-page-header h1 {font-size:var(--ds-text-title)}
+  .tasks-top-controls {gap:12px; width:100%}
+  .tasks-me {flex-direction:column; align-items:flex-start; gap:4px; font-size:.8125rem}
+}

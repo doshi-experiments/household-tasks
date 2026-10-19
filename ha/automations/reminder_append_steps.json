@@ -1,0 +1,32 @@
+{
+    "description": "Append these steps to the end of an existing evening reminder automation (one that already chose its speakers into a response variable called `speaker`). On every run they ask the Tasks service what to add: alarm tasks that are due (every run, read exactly) and, on the first run of the day, the other tasks due today or overdue. Nothing is added while it's quiet (night mode). Replace <TTS_ENGINE> and the voice options with your own.",
+    "steps": [
+        {
+            "alias": "Ask Household Tasks what to add",
+            "action": "rest_command.tasks_dog_alarm",
+            "response_variable": "tasks",
+            "continue_on_error": true
+        },
+        {
+            "if": [
+                {"condition": "template", "value_template": "{{ tasks is defined and tasks.status == 200 and (tasks.content.text | default('') | trim) != '' }}"}
+            ],
+            "then": [
+                {"delay": {"seconds": 15}},
+                {
+                    "action": "media_player.play_media",
+                    "target": {"entity_id": "{{ speaker.media_players }}"},
+                    "data": {
+                        "announce": true,
+                        "media": {
+                            "media_content_id": "media-source://tts/<TTS_ENGINE>?message={{ tasks.content.text | urlencode }}",
+                            "media_content_type": "music",
+                            "metadata": {}
+                        }
+                    },
+                    "continue_on_error": true
+                }
+            ]
+        }
+    ]
+}
