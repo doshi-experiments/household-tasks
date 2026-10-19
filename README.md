@@ -58,6 +58,7 @@ Summaries go to the Telegram group (with Done buttons) and to each person's phon
 | In HA | What it does | In this repo |
 |---|---|---|
 | `calendar.household_tasks` (Remote Calendar on `/calendar.ics`, labelled for the summaries) | Tasks in spoken summaries and on dashboards; refreshed 15 s after any change | — (set up in the UI) |
+| A second Remote Calendar on `/calendar-reminders.ics`, labelled **Reminder calendar** | Only tasks with a time of their own (not the 17:30 default), upcoming only: HA's calendar-reminders automation speaks them 30 and 10 minutes before (and pushes both phones) | — (set up in the UI) |
 | `sensor.household_tasks` (REST, `/api/summary`) | Counts for dashboards | `ha/configuration-tasks.yaml` |
 | `rest_command.tasks_action`, `tasks_dog_alarm`, `tasks_complete` | Phone buttons, the evening-reminder speech, the optional "done" switch | `ha/configuration-tasks.yaml` |
 | Notification-actions automation | Forwards Done / Snooze taps on phone notifications | `ha/automations/` |
@@ -73,12 +74,12 @@ Telegram allows one program per bot token, so every Telegram message goes throug
 
 ### API (`app/web.py`)
 
-Writes need `Authorization: Bearer $TASKS_API_TOKEN`, or a same-origin browser request with `X-Tasks-Request: 1`. `/hooks/*` is bearer only. Open: `/api/health`, `/calendar.ics`, the pages.
+Writes need `Authorization: Bearer $TASKS_API_TOKEN`, or a same-origin browser request with `X-Tasks-Request: 1`. `/hooks/*` is bearer only. Open: `/api/health`, `/calendar.ics`, `/calendar-reminders.ics`, the pages.
 
 - **Tasks:** `GET/POST /api/tasks` (`?kind=recurring|oneoff|homelab&status&category&assignee&source&q&window&done_days`; `done_days` adds tasks finished in the last N days), `GET/PATCH/DELETE /api/tasks/{id}` (DELETE archives), `POST /api/tasks/{id}/complete|skip|snooze`, `POST /api/tasks/parse-schedule`
 - **Shopping:** `GET/POST /api/shopping`, `PATCH/DELETE /api/shopping/{id}`, `POST /api/shopping/{id}/buy|unbuy`, `POST /api/shopping/reorder`, `/api/shopping/lists`
 - **Views and admin:** `GET /api/summary`, `GET /api/upcoming?days=7` (tasks plus HA calendars), `GET /api/history`, `GET /api/digest/preview?kind=morning|evening|dog_alarm|p0`, `POST /api/admin/run`, `POST /api/admin/test-notify`
-- **Hooks:** `POST /hooks/ha-action`, `POST /hooks/dog-alarm`; **feed:** `GET /calendar.ics`
+- **Hooks:** `POST /hooks/ha-action`, `POST /hooks/dog-alarm`; **feeds:** `GET /calendar.ics` (every open household task), `GET /calendar-reminders.ics` (upcoming tasks with their own time only)
 
 Priorities are `high`, `medium`, `low` (stored 1–3); `critical` or the old `p0` means High with the alarm on. Homelab tasks also have a `stage` (`idea`, `next`, `doing`; done is the status) and never take the alarm. Categories have an `area` (`household` or `homelab`; `POST /api/categories {name, hint, area}`).
 
@@ -142,6 +143,7 @@ compose.yaml, Dockerfile, requirements.txt
 
 ## Change log
 
+- **2026-10-19** — `/calendar-reminders.ics`: upcoming household tasks with a time of their own (not the 17:30 default), for a second HA Remote Calendar labelled Reminder calendar, so HA's existing calendar reminders speak them 30 and 10 minutes before. Tasks gain `own_time`.
 - **2026-10-19** — Alarms go out with the evening feed-the-dogs announcement: the first `/hooks/dog-alarm` call of the day sends every due alarm at the default time (once a day, ledger `dog_alarm_heard`); without an announcement, `SPOKEN_FALLBACK` (20:30) stands in; never in night mode. Alarm tasks with their own time (not 17:30) keep it. `alarm_at` on each task says which.
 - **2026-10-19** — UI round 4: an Alarm on/off toggle on household cards and a new Alarm column in the table (with a filter); the app's own dropdowns, date picker (calendar popover, keyboard friendly) and half-hour time picker replace the browser's (`frontend/src/controls.jsx`, Base UI Select and Popover); buttons and toggles 36px (34px on cards); drag handles centred on the card text; the table's filter count is gone (Clear filters sits in the filter row, so the table doesn't move); the "choose who you are" note is gone; the shopping toggle now shows one list at a time and adds to it.
 - **2026-10-19** — Homelab tab: a progress board (Ideas → Next up → Doing → Done) for software projects, grouped by project with a filter. Tasks and categories gain an `area`; homelab tasks have a `stage` and never notify (`Tasks.open_tasks()` is household-only). The edit form switches to Project, Priority and Stage for them; either form can move a task between household and Homelab. Board drags with the keyboard now jump a whole column per Left/Right press. The Telegram bot files and prioritises homelab work itself (see its README).

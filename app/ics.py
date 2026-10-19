@@ -1,4 +1,6 @@
 """GET /calendar.ics — the task list as a calendar Home Assistant subscribes to.
+GET /calendar-reminders.ics — only tasks with a time of their own, for HA's
+spoken calendar reminders (30 and 10 minutes before).
 
 Dates only (VALUE=DATE) or UTC times, so no VTIMEZONE is needed.
 """
@@ -26,10 +28,10 @@ def _fold(line: str) -> str:
     return "\r\n ".join(out)
 
 
-def render(projected: list[dict], now: datetime, tz) -> str:
+def render(projected: list[dict], now: datetime, tz, name: str = "Household tasks") -> str:
     stamp = now.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//household//tasks//EN", "CALSCALE:GREGORIAN",
-             "X-WR-CALNAME:Household tasks"]
+             f"X-WR-CALNAME:{_esc(name)}"]
     for p in projected:
         t, d = p["task"], p["date"]
         summary = t["title"]

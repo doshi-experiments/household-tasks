@@ -110,14 +110,17 @@ class Tasks:
         eff = sch.effective_due(due, snoozed)
         st = "done" if row["status"] != "open" else sch.state(eff, row["flex"], today)
         person = self.cfg.person(row["assignee"])
+        own = None if (row["due_time"] or self.cfg.default_due_time) in (self.cfg.p0_default_time,
+                                                                         self.cfg.default_due_time) else row["due_time"]
         return {
             **{k: row[k] for k in ("id", "title", "notes", "category", "priority", "assignee", "nominal_due", "due",
                                    "snoozed_until", "last_done_at", "status", "source", "added_by", "created_at",
                                    "updated_at", "cursor", "position", "area", "stage")},
             "alarm": bool(row["alarm"]),
-            # when the alarm pushes: its own time, or None = with the evening feeding announcement
-            "alarm_at": None if (row["due_time"] or self.cfg.p0_default_time) in (self.cfg.p0_default_time,
-                                                                                   self.cfg.default_due_time) else row["due_time"],
+            # a time of its own (not the 17:30 default), else None: alarms then go out with the
+            # evening feeding announcement, and only own-time tasks are on the reminders feed
+            "own_time": own,
+            "alarm_at": own,
             "priority_label": PRIORITY_LABELS.get(row["priority"], "Medium"),
             "assignee_name": person.name if person else "",
             "schedule": {"kind": row["schedule_kind"], "rrule": row["rrule"], "anchor_date": row["anchor_date"],

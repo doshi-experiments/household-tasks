@@ -299,6 +299,24 @@ class QuietHours(Base):
         s.quiet_state = (True, self.at(21, 0))
         self.assertFalse(s.announcement_due(self.at(21, 0)))
 
+    def test_reminders_feed_has_only_own_time_tasks(self):
+        from fastapi.testclient import TestClient
+        from app.web import create_app
+        self.tasks.create({"title": "Airport run", "due": "2026-10-20", "schedule": {"due_time": "09:00"}})
+        self.tasks.create({"title": "Bins", "due": "2026-10-20"})                                   # default 17:30
+        self.tasks.create({"title": "Old call", "due": "2026-10-10", "schedule": {"due_time": "11:00"}})  # overdue
+        self.tasks.create({"title": "Deploy", "category": "Tasks app", "due": "2026-10-20",
+                           "schedule": {"due_time": "10:00"}})                                          # homelab
+        app = create_app(cfg=self.cfg, store=self.store, clock=self.clock, start_scheduler=False)
+        with TestClient(app) as c:
+            feed = c.get("/calendar-reminders.ics").text
+            full = c.get("/calendar.ics").text
+        self.assertIn("SUMMARY:Airport run", feed)
+        self.assertIn("DTSTART:20261020T090000Z", feed)
+        for gone in ("Bins", "Old call", "Deploy"):
+            self.assertNotIn(gone, feed)
+        self.assertIn("Bins", full)
+
     def test_empty_digest_blocks_the_rest_of_the_day(self):
         import asyncio
         self.clock.set(date(2026, 10, 19), 20, 30)

@@ -29,7 +29,7 @@ from .store import Store
 from .tasks import TaskError, Tasks
 
 ROOT = Path(__file__).resolve().parents[1]
-OPEN_PATHS = {"/api/health", "/calendar.ics"}
+OPEN_PATHS = {"/api/health", "/calendar.ics", "/calendar-reminders.ics"}
 log = logging.getLogger("tasks")
 
 
@@ -356,6 +356,17 @@ def create_app(cfg=None, store=None, clock=None, start_scheduler=True):
     def calendar():
         today = tasks.today()
         body = ics.render(tasks.projected(today, today + timedelta(days=cfg.calendar_days_ahead)), tasks.now(), cfg.tz)
+        return Response(body, media_type="text/calendar; charset=utf-8")
+
+    @app.get("/calendar-reminders.ics")
+    def calendar_reminders():
+        """Only upcoming tasks with a time of their own (not the 17:30 default), so
+        HA's calendar reminders speak them 30 and 10 minutes before; overdue and
+        untimed tasks stay off it."""
+        today = tasks.today()
+        proj = [p for p in tasks.projected(today, today + timedelta(days=cfg.calendar_days_ahead))
+                if p["task"]["own_time"] and not p["overdue"]]
+        body = ics.render(proj, tasks.now(), cfg.tz, name="Household task reminders")
         return Response(body, media_type="text/calendar; charset=utf-8")
 
     @app.get("/{path:path}")
