@@ -8,6 +8,7 @@ import {ScheduleBuilder} from './schedule-builder';
 import {PRIORITY_WORD, dueText} from './tasks';
 import {STAGES} from './homelab';
 import {celebrate} from './celebrate';
+import {toast} from './toast';
 
 const EMPTY = {title:'', notes:'', category:'Inbox', priority:2, alarm:false, assignee:'', due:'',
   schedule:{kind:'none', rrule:null, interval_n:null, interval_unit:null, flex:'exact', due_time:null}};
@@ -47,8 +48,11 @@ export function TaskForm({id, from = 'one-off', boot, me}) {
     if (!lab && (!task || form.due !== (task.due || ''))) body.due = form.due || null;
     if (task && task.status === 'done' && lab) delete body.stage;   // a finished task keeps its stage until reopened
     const r = task ? await patch(`tasks/${task.id}`, body) : await post('tasks', {...body, source:'web', added_by:me});
-    if (!task || tabOf(r.task) !== tabOf(task)) {location.hash = `#/task/${r.task.id}?from=${tabOf(r.task)}`; if (task) {setTask(r.task); action.setNotice('Saved.');} return;}
-    setTask(r.task); action.setNotice(`Saved. ${r.task.repeats ? `Next: ${r.task.due_text}.` : ''}`);
+    // Saving closes the task: back to its tab, with a toast to confirm.
+    const moved = task && tabOf(r.task) !== tabOf(task);
+    toast(`${task ? 'Saved' : 'Added'}: ${r.task.title}`,
+      moved ? `Moved to ${TAB_NAME[tabOf(r.task)]}.` : r.task.repeats ? `Next one ${r.task.due_text}.` : undefined);
+    location.hash = `#/${!task || moved ? tabOf(r.task) : from}`;
   }, 'save');
   const complete = event => action.run(async () => {
     const ev = {currentTarget:event?.currentTarget};
@@ -67,7 +71,9 @@ export function TaskForm({id, from = 'one-off', boot, me}) {
   const reopen = () => action.run(async () => {
     await patch(`tasks/${task.id}`, {status:'open'}); action.setNotice('Reopened.'); await load();
   }, 'reopen');
-  const archive = () => action.run(async () => {await del(`tasks/${task.id}`); location.hash = `#/${from}`;}, 'archive');
+  const archive = () => action.run(async () => {
+    await del(`tasks/${task.id}`); toast(`Archived: ${task.title}`, 'Its history is kept.'); location.hash = `#/${from}`;
+  }, 'archive');
 
   const open = task?.status === 'open';
   return <div className="tasks-stack">

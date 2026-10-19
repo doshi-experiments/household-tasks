@@ -188,6 +188,22 @@ a.ds-button {text-decoration:none; display:inline-flex; align-items:center; just
 .tasks-items-bought .tasks-item-title {text-decoration:line-through; color:var(--ds-text-secondary)}
 .tasks-item-remove {flex:none; width:48px; background:none; border:0; color:var(--ds-text-secondary); font-size:1.4rem; cursor:pointer}
 
+/* Toasts (toast.jsx): bottom right, newest at the bottom; full width on a phone. */
+.tasks-toasts {position:fixed; z-index:180; right:24px; bottom:24px; display:flex; flex-direction:column; gap:8px; width:min(380px, calc(100vw - 32px)); outline:none}
+.tasks-toast {display:flex; align-items:flex-start; gap:10px; padding:12px 12px 12px 14px; border-radius:var(--ds-radius-control); background:var(--ds-surface-overlay); color:var(--ds-text); box-shadow:var(--ds-shadow-overlay);
+  transition:opacity var(--ds-duration-fast) var(--ds-ease), translate var(--ds-duration-fast) var(--ds-ease)}
+.tasks-toast[data-starting-style],.tasks-toast[data-ending-style] {opacity:0; translate:0 12px}
+.tasks-toast[data-limited] {display:none}
+.tasks-toast-icon {flex:none; margin-top:3px; color:var(--ds-success-text, var(--ds-text))}
+.tasks-toast-text {flex:1; min-width:0}
+.tasks-toast-title {margin:0; font:600 .9375rem/1.4 var(--ds-font-body); letter-spacing:0; overflow-wrap:anywhere}
+.tasks-toast-description {margin:2px 0 0; font-size:.875rem; color:var(--ds-text-secondary)}
+.tasks-toast-close {flex:none; display:grid; place-items:center; width:28px; height:28px; border:0; border-radius:50%; background:transparent; color:var(--ds-text-secondary); cursor:pointer}
+.tasks-toast-close:hover {background:var(--ds-selection); color:var(--ds-text)}
+.tasks-toast-close:focus-visible {outline:3px solid var(--ds-focus); outline-offset:1px}
+@media(max-width:700px){.tasks-toasts {left:16px; right:16px; bottom:16px; width:auto}}
+@media(prefers-reduced-motion:reduce){.tasks-toast {transition:opacity var(--ds-duration-fast) linear} .tasks-toast[data-starting-style],.tasks-toast[data-ending-style] {translate:none}}
+
 /* Celebration: never takes a click, always gone within ~2 s. */
 .tasks-celebrate {position:fixed; inset:0; z-index:200; pointer-events:none; overflow:hidden}
 .tasks-celebrate svg {fill:var(--ds-action-primary)}

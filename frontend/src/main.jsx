@@ -15,6 +15,7 @@ import {History} from './history';
 import {Celebration} from './celebrate';
 import {useMe} from './me';
 import {Select} from './controls';
+import {ToastProvider} from './toast';
 
 const theme = createAppearanceController({storageKey:'tasks-appearance', cookie:false});
 const paintThemeColor = () => document.querySelector('meta[name="theme-color"]')?.setAttribute('content', getComputedStyle(document.documentElement).getPropertyValue('--ds-surface-page').trim());
@@ -71,4 +72,4 @@ class ErrorBoundary extends React.Component {
   static getDerivedStateFromError() {return {error:true};}
   render() {return this.state.error ? <main className="tasks-fallback"><Alert tone="error" title="This page couldn’t be shown">Your tasks are safe. Reload to try again.</Alert><Button onClick={() => location.reload()}>Reload</Button></main> : this.props.children;}
 }
-createRoot(document.getElementById('root')).render(<ErrorBoundary><App/></ErrorBoundary>);
+createRoot(document.getElementById('root')).render(<ErrorBoundary><ToastProvider><App/></ToastProvider></ErrorBoundary>);
