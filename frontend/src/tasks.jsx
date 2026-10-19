@@ -1,5 +1,5 @@
 import React, {useState} from 'react';
-import {Alert, EmptyState, PageHeader, SegmentedControl} from '@doshi-experiments/design-system/react';
+import {Alert, Badge, EmptyState, PageHeader, SegmentedControl} from '@doshi-experiments/design-system/react';
 import {patch, post} from './api';
 import {useAction, useResource} from './hooks';
 import {Pending} from './pending';
@@ -12,7 +12,7 @@ export const PRIORITY_WORD = {1:'high', 2:'medium', 3:'low'};
 export const PRIORITY_TONE = {1:'warning', 2:'info', 3:undefined};
 
 export function dueText(t) {
-  if (t.state === 'overdue') return <span className="tasks-overdue">{t.due_text} · {t.days_overdue} day{t.days_overdue === 1 ? '' : 's'} overdue</span>;
+  if (t.state === 'overdue') return <span className="tasks-overdue">{t.due_text} <Badge tone="error">{t.days_overdue} day{t.days_overdue === 1 ? '' : 's'} overdue</Badge></span>;
   if (t.state === 'someday') return <span className="tasks-muted">No date</span>;
   return <span className={t.state === 'due' ? 'tasks-due' : ''}>{t.due_text}{t.schedule.due_time ? ` · ${t.schedule.due_time}` : ''}
     {t.snoozed_until && <span className="tasks-snoozed">snoozed</span>}</span>;
@@ -91,7 +91,8 @@ export function TasksPage({kind, boot, me}) {
         </select>
       </label>
       {(overdue > 0 || alarms > 0) && <span className="tasks-attention" role="status">
-        {[overdue && `${overdue} overdue`, alarms && `${alarms} alarm${alarms === 1 ? '' : 's'} due`].filter(Boolean).join(' · ')}
+        {overdue > 0 && <Badge tone="error">{overdue} overdue</Badge>}
+        {alarms > 0 && <Badge tone="error">{alarms} alarm{alarms === 1 ? '' : 's'} due</Badge>}
       </span>}
       <span className="tasks-muted tasks-toolbar-count">{tasks.length} open</span>
     </div>

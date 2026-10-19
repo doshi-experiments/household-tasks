@@ -42,7 +42,7 @@ Visual checks: screenshots of the live pages with headless Chromium (a throwaway
 ## Design
 
 - Use the design system's components and tokens (`@doshi-experiments/design-system`, a private package: its tarball sits in `frontend/vendor/` on this host and is gitignored, never commit it; its README and `docs/identity.md` live at `/opt/stacks/design-system`). To upgrade, build a tarball from its repo (`git archive` + `npm pack`), swap the vendored file and the `package.json` path, and rebuild the lockfile in `node:24-slim`.
-- Felt rules followed here: underline tabs for local navigation (no global header in this private app), segmented controls for two-way switches, raised pills for buttons, pressed-in for fields only (don't nest recessed surfaces), stitched dashed rules to group form sections, coral only as a fill.
+- Felt rules followed here: underline tabs for local navigation (no global header in this private app), segmented controls for two-way switches, raised pills for buttons, pressed-in for fields only (don't nest recessed surfaces), stitched dashed rules to group form sections. The signal (0.7) is a red gradient under white text and is only ever a fill; text in that hue uses `action-link`. Error red must always come with its tinted background and words (use an error `Badge`), never bare red text, so it can't be mistaken for the brand.
 - Copy: sentence case, plain verbs, the action's name repeated in its outcome ("Done: …", "Snoozed … until …").
 - Check phone width (390px) and dark mode for any layout change.
 

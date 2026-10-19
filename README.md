@@ -4,7 +4,7 @@ One place for the household's chores, one-off to-dos and shopping lists. It work
 
 - **App:** `https://tasks.<your-tailnet>.ts.net` (Tailscale sidecar) and `http://<TASKS_BIND_ADDR>:8040` on the LAN
 - **Runs on:** a Docker host, as the Dockge stack `/opt/stacks/tasks`
-- **Built with:** Python 3.14, FastAPI and SQLite; React 19 and Vite on the private design system `@doshi-experiments/design-system` 0.6 ("Felt")
+- **Built with:** Python 3.14, FastAPI and SQLite; React 19 and Vite on the private design system `@doshi-experiments/design-system` 0.7 (Felt, signal red)
 - **Talks to:** Home Assistant (`HA_URL`), the ingest-bot Telegram bot (`/opt/stacks/ingest-bot`)
 
 ## Using it
@@ -93,7 +93,7 @@ Offline tests (35, no network): build, then
 docker run --rm --network none tasks-tasks python -m unittest discover tests
 ```
 
-The design system is a private package and is not in this repository. Building the frontend needs its tarball at `frontend/vendor/doshi-experiments-design-system-0.6.0.tgz` (from the design-system repo: `git archive` a release, then `npm pack`).
+The design system is a private package and is not in this repository. Building the frontend needs its tarball at `frontend/vendor/doshi-experiments-design-system-0.7.0.tgz` (from the design-system repo: `git archive` a release, then `npm pack`).
 
 Frontend only (from `frontend/`, in the build's Node image):
 
@@ -138,6 +138,7 @@ compose.yaml, Dockerfile, requirements.txt
 
 ## Change log
 
+- **2026-10-19** — Design system 0.7.0 (signal red): primary buttons are a raspberry-to-brick gradient with white text, links and focus are brick red. Overdue is now an error badge (tinted background and words) instead of red text and a red card edge, so it never reads as the brand colour; the shopping tick uses the signal gradient.
 - **2026-10-19** — Repo created; README and CLAUDE.md written. `ha/` holds placeholder templates; house-specific exports and network addresses stay out of git (`ha/local/`, `.env`'s `TASKS_BIND_ADDR`).
 - **2026-10-19** — The summary row is gone; the period filter is a "Show" dropdown with counts, plus a red "N overdue · N alarms due" note when there are any.
 - **2026-10-19** — UI round 3: one raised "Snooze ▾" menu (table and cards, dated tasks only); cards show Snooze + Done and the title opens details; period filter shared by board and table; click-to-sort headers; the edit form's schedule is a stitched group rather than a recessed well.

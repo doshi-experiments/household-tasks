@@ -28,7 +28,7 @@ button,input,select,textarea {font:inherit}
 .tasks-toolbar-count {margin-left:auto}
 .tasks-period {display:flex; align-items:center; gap:10px; font-weight:600; font-size:.875rem; color:var(--ds-text-secondary)}
 .tasks-period .ds-select-input {width:auto; min-width:190px; color:var(--ds-text); font-weight:500}
-.tasks-attention {color:var(--ds-error-text); font-weight:600; font-size:.875rem}
+.tasks-attention {display:inline-flex; gap:6px}
 .tasks-actions {display:flex; align-items:center; flex-wrap:wrap; gap:8px}
 .tasks-metrics {display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:16px 24px}
 .tasks-grid {display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px 24px; align-items:start}
@@ -36,7 +36,7 @@ button,input,select,textarea {font:inherit}
 .tasks-inline > .ds-field {min-width:120px}
 .tasks-inline-note {flex-basis:100%; margin:0}
 .tasks-muted {color:var(--ds-text-secondary); font-size:.875rem}
-.tasks-overdue {color:var(--ds-error-text); font-weight:600}
+.tasks-overdue {display:inline-flex; flex-wrap:wrap; align-items:center; gap:4px 8px; font-weight:600}
 .tasks-due {font-weight:600}
 .tasks-field-error {color:var(--ds-error-text); margin:0}
 .tasks-refreshing {opacity:.6; transition:opacity var(--ds-duration-fast)}
@@ -102,7 +102,6 @@ a.ds-button {text-decoration:none; display:inline-flex; align-items:center; just
 .tasks-card {position:relative; display:grid; gap:8px; padding:12px 14px 10px 8px; border-radius:18px; background:var(--ds-surface-raised); box-shadow:var(--ds-shadow-raised)}
 .tasks-card::after {content:""; position:absolute; inset:5px; border:1.5px dashed var(--ds-stitch); border-radius:14px; pointer-events:none; opacity:.7}
 .tasks-card.is-overlay {cursor:grabbing; rotate:1.5deg; box-shadow:var(--ds-shadow-overlay)}
-.tasks-card-overdue {box-shadow:var(--ds-shadow-raised), inset 4px 0 0 var(--ds-error-text)}
 .tasks-card-top {display:flex; align-items:flex-start; gap:6px}
 .tasks-card-text {min-width:0; flex:1; display:grid; gap:4px}
 .tasks-card-title {color:var(--ds-text); font-weight:600; text-decoration:none; overflow-wrap:anywhere; line-height:1.35}
@@ -127,7 +126,7 @@ a.ds-button {text-decoration:none; display:inline-flex; align-items:center; just
 .tasks-item:active {background:var(--ds-selection)}
 .tasks-item-title {font-size:1.0625rem}
 .tasks-tick {flex:none; width:26px; height:26px; border-radius:50%; background:var(--ds-surface-inset); box-shadow:var(--ds-shadow-pressed)}
-.tasks-tick.is-done {background:var(--ds-action-primary)}
+.tasks-tick.is-done {background:var(--ds-action-gradient, var(--ds-action-primary)); box-shadow:none}
 .tasks-items-bought .tasks-item-title {text-decoration:line-through; color:var(--ds-text-secondary)}
 .tasks-item-remove {flex:none; width:48px; background:none; border:0; color:var(--ds-text-secondary); font-size:1.4rem; cursor:pointer}
 
