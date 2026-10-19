@@ -338,6 +338,11 @@ def create_app(cfg=None, store=None, clock=None, start_scheduler=True):
         if sched.quiet(tasks.now()):   # night mode on (HA's reminder also stops then): add nothing
             return {"text": "", "verbatim": False, "first_today": False, "p0": [], "due_today": [], "quiet": True}
         today = tasks.today().isoformat()
+        # The announcement is playing: alarms at the default time go out now (once a day, by the ledger).
+        if not sched.sent(0, "dog_alarm_heard", today, "hook"):
+            sched.record(0, "dog_alarm_heard", today, "hook", True, "feeding announcement played")
+        if sched.loop:
+            asyncio.run_coroutine_threadsafe(sched.p0_push(tasks.now()), sched.loop)
         first = not sched.sent(0, "dog_alarm_digest", today, "spoken")
         said = digest.dog_alarm(tasks.open_tasks(), first)
         if first and said["due_today"]:

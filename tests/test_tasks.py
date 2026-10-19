@@ -276,6 +276,29 @@ class QuietHours(Base):
         self.assertTrue(s._due_slot(self.at(21, 15), "17:30", whole_day=True))   # hours later, same day
         self.assertFalse(s._due_slot(self.at(21, 15), "17:30"))                  # non-P0 slots still expire
 
+    def test_alarms_go_out_with_the_feeding_announcement(self):
+        import asyncio
+        meds = self.tasks.create({"title": "Meds", "priority": "critical", "due": "2026-10-19"})          # default time
+        early = self.tasks.create({"title": "Airport", "priority": "critical", "due": "2026-10-19",
+                                   "schedule": {"due_time": "09:00"}})                                     # its own time
+        s = self.sched(night=False, read_at=self.at(17, 30))
+        self.assertTrue(s.with_announcement(meds) and not s.with_announcement(early))
+        sent = lambda r: sorted({x["summary"].split(":")[0].replace("⚠️", "").strip() for x in r
+                                 if x["status"] == "dry-run" and "→" in x["summary"]})
+        self.assertEqual(sent(asyncio.run(s.p0_push(self.at(17, 30)))), ["Airport"])   # 17:30 alone no longer sends meds
+        s.quiet_state = (False, self.at(19, 30))
+        s.record(0, "dog_alarm_heard", "2026-10-19", "hook", True)                      # the announcement played
+        self.assertEqual(sent(asyncio.run(s.p0_push(self.at(19, 30)))), ["Meds"])
+        self.assertEqual(sent(asyncio.run(s.p0_push(self.at(19, 35)))), [])             # once a day
+        # a day with no announcement: 20:30 stands in, but never while night mode is on
+        s.store.db.execute("DELETE FROM notifications")
+        s.quiet_state = (False, self.at(20, 0))
+        self.assertFalse(s.announcement_due(self.at(20, 0)))
+        s.quiet_state = (False, self.at(20, 30))
+        self.assertTrue(s.announcement_due(self.at(20, 30)))
+        s.quiet_state = (True, self.at(21, 0))
+        self.assertFalse(s.announcement_due(self.at(21, 0)))
+
     def test_empty_digest_blocks_the_rest_of_the_day(self):
         import asyncio
         self.clock.set(date(2026, 10, 19), 20, 30)

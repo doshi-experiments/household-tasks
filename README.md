@@ -18,7 +18,7 @@ One place for the household's chores, one-off to-dos and shopping lists, plus a 
 | **History** | What was done or skipped, by whom and from where (web, Telegram, phone, the Dog Meds switch). |
 
 - **Show** (above both views): Due now, Next 7 days, This month or All, with counts. Overdue tasks always show.
-- **Alarm on / Alarm off** on every household card and table row switches “alarm until done” in place (a daily critical push at its time, 17:30 by default, from its due date until it's done).
+- **Alarm on / Alarm off** on every household card and table row switches “alarm until done” in place (a daily critical push with the evening feed-the-dogs announcement, or at the task's own time, from its due date until it's done).
 - **Snooze ▾** hides a dated task until Tomorrow, In 3 days, This weekend, Next week or a date you pick. It never counts as done and never changes the schedule.
 - **"I am"** (top right) is remembered per browser and is who gets credit for what you tick off.
 - Done plays a short random dog moment (paw prints, a dog popping up, or hearts and bones). With reduced motion it's a simple fade.
@@ -43,7 +43,7 @@ Under the hood: each occurrence is identified by its `nominal_due`; every Done/S
 
 | | Reminders |
 |---|---|
-| **Alarm until done** (a switch on any task; dog meds has it) | A critical push to everyone at its time each day, and the same in Telegram, both with Done / Snooze buttons; plus a spoken line at the end of the feed-dogs reminder. Repeats daily until done. |
+| **Alarm until done** (a switch on any task; dog meds has it) | A critical push to everyone, and the same in Telegram, both with Done / Snooze buttons, **with the first feed-the-dogs announcement of the evening** (when HA calls `/hooks/dog-alarm`; 20:30 on days it doesn't play). A task with a time of its own (anything but the 17:30 default) pushes at that time instead. Plus a spoken line at the end of every feed-dogs announcement. Repeats daily until done. |
 | **High** | In the morning (08:00) and evening (20:30) summaries; once overdue, a time-sensitive push at 18:00 each day. |
 | **Medium / Low** | In the morning and evening summaries, and spoken once in the first feed-dogs reminder of the day it's due. |
 
@@ -142,6 +142,7 @@ compose.yaml, Dockerfile, requirements.txt
 
 ## Change log
 
+- **2026-10-19** — Alarms go out with the evening feed-the-dogs announcement: the first `/hooks/dog-alarm` call of the day sends every due alarm at the default time (once a day, ledger `dog_alarm_heard`); without an announcement, `SPOKEN_FALLBACK` (20:30) stands in; never in night mode. Alarm tasks with their own time (not 17:30) keep it. `alarm_at` on each task says which.
 - **2026-10-19** — UI round 4: an Alarm on/off toggle on household cards and a new Alarm column in the table (with a filter); the app's own dropdowns, date picker (calendar popover, keyboard friendly) and half-hour time picker replace the browser's (`frontend/src/controls.jsx`, Base UI Select and Popover); buttons and toggles 36px (34px on cards); drag handles centred on the card text; the table's filter count is gone (Clear filters sits in the filter row, so the table doesn't move); the "choose who you are" note is gone; the shopping toggle now shows one list at a time and adds to it.
 - **2026-10-19** — Homelab tab: a progress board (Ideas → Next up → Doing → Done) for software projects, grouped by project with a filter. Tasks and categories gain an `area`; homelab tasks have a `stage` and never notify (`Tasks.open_tasks()` is household-only). The edit form switches to Project, Priority and Stage for them; either form can move a task between household and Homelab. Board drags with the keyboard now jump a whole column per Left/Right press. The Telegram bot files and prioritises homelab work itself (see its README).
 - **2026-10-19** — Design system 0.7.0 (signal red): primary buttons are a raspberry-to-brick gradient with white text, links and focus are brick red. Overdue is now an error badge (tinted background and words) instead of red text and a red card edge, so it never reads as the brand colour; the shopping tick uses the signal gradient.

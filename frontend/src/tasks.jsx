@@ -89,7 +89,7 @@ export function TasksPage({kind, boot, me}) {
       const r = await patch(`tasks/${t.id}`, {alarm:on});
       const n = r.task;
       action.setNotice(!on ? `Alarm off: ${t.title}.`
-        : n.eff_due ? `Alarm on: ${t.title}. It pushes at ${n.schedule.due_time || '17:30'} every day from ${n.due_text} until it’s done.`
+        : n.eff_due ? `Alarm on: ${t.title}. It pushes ${n.alarm_at ? `at ${n.alarm_at}` : 'with the evening feed-the-dogs announcement (8:30 PM if that doesn’t play)'} every day from ${n.due_text} until it’s done.`
         : `Alarm on: ${t.title}. It starts once the task has a due date.`);
       await list.reload();
     }, `alarm:${t.id}`),

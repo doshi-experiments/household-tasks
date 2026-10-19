@@ -115,6 +115,9 @@ class Tasks:
                                    "snoozed_until", "last_done_at", "status", "source", "added_by", "created_at",
                                    "updated_at", "cursor", "position", "area", "stage")},
             "alarm": bool(row["alarm"]),
+            # when the alarm pushes: its own time, or None = with the evening feeding announcement
+            "alarm_at": None if (row["due_time"] or self.cfg.p0_default_time) in (self.cfg.p0_default_time,
+                                                                                   self.cfg.default_due_time) else row["due_time"],
             "priority_label": PRIORITY_LABELS.get(row["priority"], "Medium"),
             "assignee_name": person.name if person else "",
             "schedule": {"kind": row["schedule_kind"], "rrule": row["rrule"], "anchor_date": row["anchor_date"],

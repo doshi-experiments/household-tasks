@@ -110,7 +110,7 @@ export function TaskForm({id, from = 'one-off', boot, me}) {
           hint={form.schedule.kind === 'none' ? 'Leave empty for “someday”.' : task ? 'Change it to move the next one.' : 'Leave empty to start today.'}/>
       </div>
       <CheckboxField label="Alarm until done" checked={form.alarm} onCheckedChange={alarm => set({alarm})}
-            hint="Pushes every day at its time and is read out on the speakers until someone marks it done."/>
+            hint="A critical push every day until someone marks it done: with the evening feed-the-dogs announcement (8:30 PM if that doesn’t play), or at the task’s own time if you set one other than 5:30 PM. Also read out with the announcement."/>
       <ScheduleBuilder value={form.schedule} onChange={schedule => set({schedule})} anchor={form.due || task?.schedule.anchor_date}/>
       </>}
       <label className="tasks-textarea"><span className="ds-field-label">Notes</span>

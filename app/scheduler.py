@@ -34,6 +34,7 @@ class Scheduler:
         self.cfg, self.store, self.tasks, self.shopping, self.ha, self.bot = cfg, store, tasks, shopping, ha, bot
         self.last_tick: str = ""
         self.loop: asyncio.AbstractEventLoop | None = None
+        self._p0_lock = asyncio.Lock()   # the minute tick and the dog-alarm hook both run p0_push
         self._refresh_pending = False
         self.quiet_state: tuple[bool, datetime] | None = None   # (night mode on?, when read)
         tasks.listeners.append(self._on_change)
@@ -107,6 +108,21 @@ class Scheduler:
         slot = self._at(now, hhmm)
         return slot <= now and (whole_day or now < slot + CATCH_UP)
 
+    def with_announcement(self, t: dict) -> bool:
+        """Alarms at the default time go out with the evening feed-the-dogs
+        announcement; a task with a time of its own keeps it."""
+        return (t["schedule"]["due_time"] or self.cfg.p0_default_time) in (self.cfg.p0_default_time, self.cfg.default_due_time)
+
+    def announcement_due(self, now: datetime) -> bool:
+        """True once today's first feeding announcement has played (HA called
+        /hooks/dog-alarm), or from SPOKEN_FALLBACK (20:30) on days it never
+        plays; never while quiet."""
+        if self.quiet(now):
+            return False
+        if self.sent(0, "dog_alarm_heard", now.date().isoformat(), "hook"):
+            return True
+        return bool(self.cfg.spoken_fallback) and self._due_slot(now, self.cfg.spoken_fallback, whole_day=True)
+
     def _target(self, t: dict, default: str) -> str:
         p = self.cfg.person(t["assignee"])
         return p.send_to if p else default
@@ -130,11 +146,16 @@ class Scheduler:
 
     # ------------------------------------------------------------ jobs
     async def p0_push(self, now: datetime, force=False, dry=None, only_task=None, to=None) -> list[dict]:
+        async with self._p0_lock:
+            return await self._p0_push(now, force, dry, only_task, to)
+
+    async def _p0_push(self, now: datetime, force=False, dry=None, only_task=None, to=None) -> list[dict]:
         today, out = now.date().isoformat(), []
         for t in self.tasks.open_tasks():
             if not t["alarm"] or t["state"] not in ("due", "overdue") or (only_task and t["id"] != only_task):
                 continue
-            if not force and not self._due_slot(now, t["schedule"]["due_time"] or self.cfg.p0_default_time, whole_day=True):
+            if not force and not (self.announcement_due(now) if self.with_announcement(t)
+                                  else self._due_slot(now, t["schedule"]["due_time"], whole_day=True)):
                 continue
             title, msg = digest.p0_push(t, now.date())
             send_to = to or self._target(t, self.cfg.p0_send_to)
