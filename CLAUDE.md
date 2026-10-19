@@ -11,6 +11,7 @@ The household's task and shopping service, running live as the Dockge stack `/op
 - **This directory is production.** A deploy is `docker compose up -d --build tasks`. Commit before and after a change; git is the rollback.
 - **Never print `.env` values.** List keys with `cut -d= -f1 .env`. `.env`, `data/` and anything with `.bak` in its name stay out of git (`.gitignore`).
 - **Never send a notification to test something** (no `POST /api/admin/test-notify`, no forced `/api/admin/run` with `dry:false`, no completing or snoozing real tasks) without the user's go-ahead. Pushes are critical alerts on family phones and Telegram messages reach the whole family.
+- **Homelab never notifies.** `Tasks.open_tasks()` returns household tasks only, and every reminder, summary, spoken line, the calendar feed and `/api/summary` read from it. A new notifying path must start there too, never from `Tasks.list()`.
 - **Night mode is sacred.** Nothing may push or speak while HA's night-mode switch (`QUIET_ENTITY`) is on (`Scheduler.quiet`). Any new send path must go through `Scheduler.deliver` and a `_due_slot` check.
 - **Try UI interactions on a scratch copy**, never the live data: back up `data/tasks.db` with the SQLite backup API, run a second container on another port with `DB_PATH` pointing at the copy and `NOTIFY_ENABLED=false HA_TOKEN= BOT_TOKEN= HA_SWITCH_TASKS=`, test there, then remove it.
 - **Keep the ledger names.** Scheduler job and `notifications.kind` names still say `p0_push` / `p1_overdue`; renaming them would let today's reminders send twice.
@@ -31,13 +32,13 @@ Visual checks: screenshots of the live pages with headless Chromium (a throwaway
 
 ## Architecture
 
-- **`app/schedule.py`**: pure date rules. Kinds `none`, `interval` (from last done), `rrule` (fixed). `parse_phrase` turns words into a schedule; `apply_flex` does weekend flex (Mon–Thu → Friday); occurrences are identified by `nominal_due`, the next one comes from `cursor`. Unit-tested in `tests/test_schedule.py`.
+- **`app/schedule.py`**: pure date rules. Kinds `none`, `interval` (from last done), `rrule` (fixed). `parse_phrase` turns words into a schedule; `apply_flex` does weekend flex (Mon–Thu → Friday); occurrences are identified by `nominal_due`, the next one comes from `cursor`. Unit-tested in `tests/test_schedule.py`. Areas: a category is `household` or `homelab`, and a task takes its category's area; homelab tasks add a `stage` (idea, next, doing).
 - **`app/tasks.py`**: the task rows. Create, patch, complete, skip, snooze; `serialize` adds `state`, `eff_due`, `occurrence`, `schedule_text`. Listeners fire after commits (the scheduler uses them to clear pushes, flip the Dog Meds switch and refresh HA's calendar).
 - **`app/scheduler.py`**: one asyncio minute tick. Alarm pushes, High-overdue pushes, morning and evening summaries, the spoken fallback. Every send goes through `deliver` and the `notifications` ledger (unique per task, kind, day and channel).
 - **`app/web.py`**: FastAPI routes, auth middleware, hooks for HA, `/calendar.ics`, and the built SPA.
 - **`app/store.py`**: SQLite schema; `_migrate` applies schema changes on start. Add new migrations there, never by hand.
 - **`app/ha.py`, `app/bot.py`**: Home Assistant REST (notification hub script, speech, switches, calendars) and ingest-bot's `/tasks-message`.
-- **`frontend/src`**: React. `main.jsx` (tabs and routes), `tasks.jsx` (page, period filter, shared actions), `board.jsx` (dnd-kit columns), `table.jsx` (sort, filters, inline edits), `snooze.jsx`, `task-form.jsx` with `schedule-builder.jsx`, `shopping.jsx`, `history.jsx`, `celebrate.jsx`, `tasks.css`.
+- **`frontend/src`**: React. `main.jsx` (tabs and routes), `tasks.jsx` (page, period filter, shared actions), `board.jsx` (generic dnd-kit `Board`; `TaskBoard` = priority columns), `homelab.jsx` (the progress board), `table.jsx` (sort, filters, inline edits), `snooze.jsx`, `task-form.jsx` with `schedule-builder.jsx`, `shopping.jsx`, `history.jsx`, `celebrate.jsx`, `tasks.css`.
 
 ## Design
 

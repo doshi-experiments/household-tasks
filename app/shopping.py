@@ -24,10 +24,13 @@ class Lists:
     def find(self, name: str) -> dict | None:
         return self.store.one(f"SELECT * FROM {self.table} WHERE lower(name)=lower(?)", ((name or "").strip(),))
 
-    def create(self, name: str, hint: str = "") -> dict:
+    def create(self, name: str, hint: str = "", area: str | None = None) -> dict:
+        """area (categories only): household (the default) or homelab."""
         name = (name or "").strip()
         if not name or "/" in name:
             raise TaskError(400, "A list name can't be empty or contain '/'.")
+        if area not in (None, "", "household", "homelab"):
+            raise TaskError(400, "Area is household or homelab.")
         found = self.find(name)
         if found and not found["archived"]:
             raise TaskError(409, f"{found['name']} already exists.")
@@ -37,6 +40,8 @@ class Lists:
             else:
                 top = db.execute(f"SELECT coalesce(max(sort),0)+1 FROM {self.table}").fetchone()[0]
                 db.execute(f"INSERT INTO {self.table}(name, sort, hint) VALUES (?,?,?)", (name, top, hint or ""))
+            if area:
+                db.execute(f"UPDATE {self.table} SET area=? WHERE name=?", (area, found["name"] if found else name))
         return self.find(name)
 
     def update(self, name: str, new_name: str | None = None, hint: str | None = None) -> dict:

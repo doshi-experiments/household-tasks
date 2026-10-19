@@ -1,6 +1,6 @@
 # Household tasks
 
-One place for the household's chores, one-off to-dos and shopping lists. It works out when each task is due, reminds the right people at the right time (Home Assistant phone pushes, the family Telegram group, the house speakers), gives Home Assistant a calendar of what's coming up, and is the Telegram bot's list backend.
+One place for the household's chores, one-off to-dos and shopping lists, plus a board for homelab (software) projects. It works out when each task is due, reminds the right people at the right time (Home Assistant phone pushes, the family Telegram group, the house speakers), gives Home Assistant a calendar of what's coming up, and is the Telegram bot's list backend.
 
 - **App:** `https://tasks.<your-tailnet>.ts.net` (Tailscale sidecar) and `http://<TASKS_BIND_ADDR>:8040` on the LAN
 - **Runs on:** a Docker host, as the Dockge stack `/opt/stacks/tasks`
@@ -13,6 +13,7 @@ One place for the household's chores, one-off to-dos and shopping lists. It work
 |---|---|
 | **One-off** | Things to do once. **Board** view: High / Medium / Low columns; drag a card by its handle (or focus the handle, Space, arrows, Space) to reorder it or change its priority. **Table** view: sort by any heading, filter any column, change category and priority in place. |
 | **Recurring** | Chores on a schedule. Same Board and Table views. **Done** moves a task to its next date. |
+| **Homelab** | Software to build, update or host, by project (Home Assistant, Tasks app, Ingest bot, Portfolio site, Infrastructure, New projects). A progress board: **Ideas → Next up → Doing → Done** (Done shows the last 14 days; dragging a card out of Done reopens it). Cards sort by priority within a column. **Nothing here ever sends a reminder.** |
 | **Shopping** | Groceries and Everything Else. Tap an item to tick it off; Undo is right there. |
 | **History** | What was done or skipped, by whom and from where (web, Telegram, phone, the Dog Meds switch). |
 
@@ -21,7 +22,7 @@ One place for the household's chores, one-off to-dos and shopping lists. It work
 - **"I am"** (top right) is remembered per browser and is who gets credit for what you tick off.
 - Done plays a short random dog moment (paw prints, a dog popping up, or hearts and bones). With reduced motion it's a simple fade.
 
-Tasks can also be added and ticked off from the Telegram group in plain language (“water the plants every Saturday”, “gave the dogs their meds”, “what's coming up this week?”).
+Tasks can also be added and ticked off from the Telegram group in plain language (“water the plants every Saturday”, “gave the dogs their meds”, “what's coming up this week?”). The bot files anything software-related under Homelab on its own (“the morning briefing automation didn't fire”, “idea: self-host a recipe manager”) and sets its priority by impact: High when something running is broken or at risk, Medium for improving something in use, Low for ideas.
 
 ## How it works
 
@@ -47,6 +48,8 @@ Under the hood: each occurrence is identified by its `nominal_due`; every Done/S
 
 Summaries go to the Telegram group (with Done buttons) and to each person's phone (their own tasks first). Assigned tasks notify that person; unassigned ones notify everyone.
 
+**Homelab tasks never notify:** they have no alarm or default time, and stay out of the summaries, pushes, speech, HA's calendar and sensor, and "what's coming up". A task's area comes from its category, so moving a chore into a Homelab project (or back) moves it in or out of all of that.
+
 **Quiet:** nothing is sent, pushed or spoken while Home Assistant's night-mode switch (`QUIET_ENTITY`) is on. If HA can't be read, 22:00–07:00 stands in. A missed slot is caught up for 3 hours (an alarm for the rest of its day), then skipped. Every send is recorded in the `notifications` table, so a restart never sends twice.
 
 ### Home Assistant (`ha/`)
@@ -71,12 +74,12 @@ Telegram allows one program per bot token, so every Telegram message goes throug
 
 Writes need `Authorization: Bearer $TASKS_API_TOKEN`, or a same-origin browser request with `X-Tasks-Request: 1`. `/hooks/*` is bearer only. Open: `/api/health`, `/calendar.ics`, the pages.
 
-- **Tasks:** `GET/POST /api/tasks` (`?kind=recurring|oneoff&status&category&assignee&source&q&window`), `GET/PATCH/DELETE /api/tasks/{id}` (DELETE archives), `POST /api/tasks/{id}/complete|skip|snooze`, `POST /api/tasks/parse-schedule`
+- **Tasks:** `GET/POST /api/tasks` (`?kind=recurring|oneoff|homelab&status&category&assignee&source&q&window&done_days`; `done_days` adds tasks finished in the last N days), `GET/PATCH/DELETE /api/tasks/{id}` (DELETE archives), `POST /api/tasks/{id}/complete|skip|snooze`, `POST /api/tasks/parse-schedule`
 - **Shopping:** `GET/POST /api/shopping`, `PATCH/DELETE /api/shopping/{id}`, `POST /api/shopping/{id}/buy|unbuy`, `POST /api/shopping/reorder`, `/api/shopping/lists`
 - **Views and admin:** `GET /api/summary`, `GET /api/upcoming?days=7` (tasks plus HA calendars), `GET /api/history`, `GET /api/digest/preview?kind=morning|evening|dog_alarm|p0`, `POST /api/admin/run`, `POST /api/admin/test-notify`
 - **Hooks:** `POST /hooks/ha-action`, `POST /hooks/dog-alarm`; **feed:** `GET /calendar.ics`
 
-Priorities are `high`, `medium`, `low` (stored 1–3); `critical` or the old `p0` means High with the alarm on.
+Priorities are `high`, `medium`, `low` (stored 1–3); `critical` or the old `p0` means High with the alarm on. Homelab tasks also have a `stage` (`idea`, `next`, `doing`; done is the status) and never take the alarm. Categories have an `area` (`household` or `homelab`; `POST /api/categories {name, hint, area}`).
 
 ## Running it
 
@@ -138,6 +141,7 @@ compose.yaml, Dockerfile, requirements.txt
 
 ## Change log
 
+- **2026-10-19** — Homelab tab: a progress board (Ideas → Next up → Doing → Done) for software projects, grouped by project with a filter. Tasks and categories gain an `area`; homelab tasks have a `stage` and never notify (`Tasks.open_tasks()` is household-only). The edit form switches to Project, Priority and Stage for them; either form can move a task between household and Homelab. Board drags with the keyboard now jump a whole column per Left/Right press. The Telegram bot files and prioritises homelab work itself (see its README).
 - **2026-10-19** — Design system 0.7.0 (signal red): primary buttons are a raspberry-to-brick gradient with white text, links and focus are brick red. Overdue is now an error badge (tinted background and words) instead of red text and a red card edge, so it never reads as the brand colour; the shopping tick uses the signal gradient.
 - **2026-10-19** — Repo created; README and CLAUDE.md written. `ha/` holds placeholder templates; house-specific exports and network addresses stay out of git (`ha/local/`, `.env`'s `TASKS_BIND_ADDR`).
 - **2026-10-19** — The summary row is gone; the period filter is a "Show" dropdown with counts, plus a red "N overdue · N alarms due" note when there are any.

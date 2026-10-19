@@ -108,8 +108,9 @@ def create_app(cfg=None, store=None, clock=None, start_scheduler=True):
     # ------------------------------------------------------------ tasks
     @app.get("/api/tasks")
     def list_tasks(status: str = "open", category: str | None = None, assignee: str | None = None,
-                   source: str | None = None, q: str | None = None, window: str = "all", kind: str | None = None):
-        return {"tasks": tasks.list(status, category, assignee, source, q, window, kind)}
+                   source: str | None = None, q: str | None = None, window: str = "all", kind: str | None = None,
+                   done_days: int | None = None):
+        return {"tasks": tasks.list(status, category, assignee, source, q, window, kind, done_days=done_days)}
 
     @app.post("/api/tasks")
     def create_task(body: dict = Body(...)):
@@ -214,7 +215,7 @@ def create_app(cfg=None, store=None, clock=None, start_scheduler=True):
 
     @app.post("/api/categories")
     def create_category(body: dict = Body(...)):
-        return {"category": categories.create(body.get("name", ""), body.get("hint", ""))}
+        return {"category": categories.create(body.get("name", ""), body.get("hint", ""), area=body.get("area"))}
 
     @app.patch("/api/categories/{name}")
     def update_category(name: str, body: dict = Body(...)):

@@ -8,6 +8,7 @@ import './tasks.css';
 import {useResource} from './hooks';
 import {Pending} from './pending';
 import {TasksPage} from './tasks';
+import {HomelabPage} from './homelab';
 import {TaskForm} from './task-form';
 import {ShoppingList} from './shopping';
 import {History} from './history';
@@ -18,7 +19,7 @@ const theme = createAppearanceController({storageKey:'tasks-appearance', cookie:
 const paintThemeColor = () => document.querySelector('meta[name="theme-color"]')?.setAttribute('content', getComputedStyle(document.documentElement).getPropertyValue('--ds-surface-page').trim());
 paintThemeColor();
 
-const TABS = [['one-off', 'One-off'], ['recurring', 'Recurring'], ['shopping', 'Shopping'], ['history', 'History']];
+const TABS = [['one-off', 'One-off'], ['recurring', 'Recurring'], ['homelab', 'Homelab'], ['shopping', 'Shopping'], ['history', 'History']];
 
 function App() {
   const [route, setRoute] = useState(location.hash || '#/one-off');
@@ -32,7 +33,7 @@ function App() {
   const boot = useResource('bootstrap');
   const [rawPath, query = ''] = route.replace(/^#\//, '').split('?');
   const [path, id] = rawPath.split('/');
-  const page = ['one-off', 'recurring', 'task', 'shopping', 'history'].includes(path) ? path : 'one-off';
+  const page = ['one-off', 'recurring', 'homelab', 'task', 'shopping', 'history'].includes(path) ? path : 'one-off';
   // a task page keeps the tab it came from lit
   const from = new URLSearchParams(query).get('from') || 'one-off';
   const current = page === 'task' ? from : page;
@@ -59,6 +60,7 @@ function App() {
       {boot.data && <>
         {!me && page !== 'history' && <Alert tone="info">Choose who you are under “I am” so what you tick off shows your name.</Alert>}
         {(page === 'one-off' || page === 'recurring') && <TasksPage key={page} kind={page} boot={boot.data} me={me}/>}
+        {page === 'homelab' && <HomelabPage boot={boot.data} me={me}/>}
         {page === 'task' && <TaskForm key={id} id={id === 'new' ? null : Number(id)} from={from} boot={boot.data} me={me}/>}
         {page === 'shopping' && <ShoppingList boot={boot.data} me={me}/>}
         {page === 'history' && <History/>}

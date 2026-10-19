@@ -20,6 +20,8 @@ ALARM_WORDS = {"critical", "urgent", "p0", "alarm"}
 PRIORITY_LABELS = {1: "High", 2: "Medium", 3: "Low"}
 SCHEDULE_FIELDS = ("schedule_kind", "rrule", "anchor_date", "interval_n", "interval_unit", "flex", "due_time")
 EDITABLE = ("title", "notes", "category", "priority", "assignee", "source", "added_by")
+# Homelab tasks move through these stages on their board; done is the task's status.
+STAGES = ("idea", "next", "doing")
 
 
 class TaskError(Exception):
@@ -111,7 +113,7 @@ class Tasks:
         return {
             **{k: row[k] for k in ("id", "title", "notes", "category", "priority", "assignee", "nominal_due", "due",
                                    "snoozed_until", "last_done_at", "status", "source", "added_by", "created_at",
-                                   "updated_at", "cursor", "position")},
+                                   "updated_at", "cursor", "position", "area", "stage")},
             "alarm": bool(row["alarm"]),
             "priority_label": PRIORITY_LABELS.get(row["priority"], "Medium"),
             "assignee_name": person.name if person else "",
@@ -193,12 +195,20 @@ class Tasks:
                                    rrule=f["rrule"], interval_n=f["interval_n"], interval_unit=f["interval_unit"])
         return _iso(nominal), _iso(sch.apply_flex(nominal, f["flex"]))
 
-    def _category(self, name) -> str:
+    def _category(self, name) -> tuple[str, str]:
+        """-> (category name, its area: household or homelab)."""
         name = (name or "Inbox").strip()
-        row = self.store.one("SELECT name FROM categories WHERE lower(name)=lower(?) AND archived=0", (name,))
+        row = self.store.one("SELECT name, area FROM categories WHERE lower(name)=lower(?) AND archived=0", (name,))
         if not row:
             raise TaskError(400, f"No category {name!r}.")
-        return row["name"]
+        return row["name"], row["area"]
+
+    @staticmethod
+    def _stage(value) -> str:
+        v = str(value or "").strip().lower()
+        if v not in STAGES:
+            raise TaskError(400, "Stage is idea, next or doing.")
+        return v
 
     def _assignee(self, value) -> str | None:
         if value in (None, "", "none", "everyone"):
@@ -216,17 +226,24 @@ class Tasks:
             raise TaskError(400, "A task needs a title.")
         priority, alarm = parse_priority(body.get("priority"))
         alarm = bool(body.get("alarm", alarm))
+        category, area = self._category(body.get("category"))
+        stage = None
+        if area == "homelab":
+            # homelab work never reminds anyone: no alarm, and no default due time
+            alarm, stage = False, self._stage(body.get("stage") or "idea")
         f = self._schedule_fields(body, None, alarm)
+        if area == "homelab" and not (body.get("schedule") or {}).get("due_time"):
+            f["due_time"] = None
         nominal, due = self._derive(f, None)
         now = self.now().isoformat(timespec="seconds")
         with self.store.tx() as db:
             # new tasks go to the bottom of their column on the board
             top = db.execute("SELECT coalesce(max(position), 0) FROM tasks").fetchone()[0]
             cur = db.execute(
-                "INSERT INTO tasks(title, notes, category, priority, alarm, position, assignee, schedule_kind, rrule,"
-                " anchor_date, interval_n, interval_unit, flex, due_time, nominal_due, due, source, added_by,"
-                " created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (title[:300], str(body.get("notes") or ""), self._category(body.get("category")), priority,
+                "INSERT INTO tasks(title, notes, category, area, stage, priority, alarm, position, assignee, schedule_kind,"
+                " rrule, anchor_date, interval_n, interval_unit, flex, due_time, nominal_due, due, source, added_by,"
+                " created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (title[:300], str(body.get("notes") or ""), category, area, stage, priority,
                  int(alarm), top + 1024.0,
                  self._assignee(body.get("assignee")), f["schedule_kind"], f["rrule"], f["anchor_date"],
                  f["interval_n"], f["interval_unit"], f["flex"], f["due_time"], nominal, due,
@@ -245,8 +262,16 @@ class Tasks:
             updates["title"] = str(body["title"]).strip()[:300]
         if "notes" in body:
             updates["notes"] = str(body["notes"] or "")
+        area = row["area"]
         if "category" in body:
-            updates["category"] = self._category(body["category"])
+            updates["category"], area = self._category(body["category"])
+            if area != row["area"]:
+                updates["area"] = area
+                updates["stage"] = "idea" if area == "homelab" else None
+        if "stage" in body:
+            if area != "homelab":
+                raise TaskError(400, "Only homelab tasks have a stage.")
+            updates["stage"] = self._stage(body["stage"])
         if "priority" in body and body["priority"] not in (None, ""):
             updates["priority"], alarm_word = parse_priority(body["priority"])
             if alarm_word:
@@ -269,6 +294,8 @@ class Tasks:
             updates["status"] = body["status"]
         if "snoozed_until" in body:
             updates["snoozed_until"] = _iso(_d(body["snoozed_until"]))
+        if area == "homelab" and (row["alarm"] or updates.get("alarm")):
+            updates["alarm"] = 0
         alarm = bool(updates.get("alarm", row["alarm"]))
         if any(k in body for k in ("schedule", "repeat", "due")) or (updates.get("alarm") and not row["alarm"]):
             f = self._schedule_fields(body, row, alarm)
@@ -381,13 +408,24 @@ class Tasks:
         return self.store.all(sql, ((task_id, limit) if task_id else (limit,)))
 
     def list(self, status="open", category=None, assignee=None, source=None, q=None, window="all",
-             kind=None) -> list[dict]:
+             kind=None, area=None, done_days=None) -> list[dict]:
+        """kind: recurring / oneoff (household tasks) or homelab. done_days adds
+        the tasks finished in the last N days (the homelab board's Done column)."""
         sql, args = "SELECT * FROM tasks WHERE 1=1", []
         if kind == "recurring":
-            sql += " AND schedule_kind != 'none'"
+            sql += " AND area='household' AND schedule_kind != 'none'"
         elif kind == "oneoff":
-            sql += " AND schedule_kind = 'none'"
-        if status and status != "any":
+            sql += " AND area='household' AND schedule_kind = 'none'"
+        elif kind == "homelab":
+            sql += " AND area='homelab'"
+        if area:
+            sql += " AND area=?"
+            args.append(area)
+        if done_days:
+            since = (self.now() - timedelta(days=int(done_days))).isoformat(timespec="seconds")
+            sql += " AND (status='open' OR (status='done' AND last_done_at >= ?))"
+            args.append(since)
+        elif status and status != "any":
             sql += " AND status=?"
             args.append(status)
         if category:
@@ -418,7 +456,9 @@ class Tasks:
         return rows
 
     def open_tasks(self) -> list[dict]:
-        return self.list(status="open")
+        """Open household tasks: everything that reminds, summarises or goes on
+        HA's calendar starts here, so homelab tasks never notify anyone."""
+        return self.list(status="open", area="household")
 
     def summary(self) -> dict:
         today = self.today()

@@ -154,6 +154,41 @@ class TaskBehaviour(Base):
         self.assertEqual({t["title"] for t in self.tasks.list(kind="oneoff")}, {"One-off A", "One-off B"})
         self.assertEqual([t["title"] for t in self.tasks.list(kind="recurring")], ["Mow"])
 
+    def test_homelab_has_stages_and_never_reminds(self):
+        self.clock.set(date(2026, 10, 23), 8)   # Friday
+        h = self.tasks.create({"title": "Fix the backup job", "category": "Infrastructure", "priority": "critical",
+                               "due": "2026-10-20"})
+        self.assertEqual((h["area"], h["stage"], h["alarm"], h["schedule"]["due_time"]), ("homelab", "idea", False, None))
+        chore = self.tasks.create({"title": "Gutters", "due": "2026-10-20"})
+        self.assertEqual((chore["area"], chore["stage"]), ("household", None))
+        # nothing that reminds or summarises sees it
+        self.assertEqual([t["id"] for t in self.tasks.open_tasks()], [chore["id"]])
+        self.assertEqual(self.tasks.summary()["overdue"], 1)
+        secs = digest.sections(self.tasks.open_tasks(), self.clock().date(), "evening")
+        self.assertNotIn(h["id"], [t["id"] for _, rows in secs for t in rows])
+        proj = self.tasks.projected(self.clock().date(), self.clock().date() + timedelta(days=30))
+        self.assertNotIn(h["id"], [p["task"]["id"] for p in proj])
+        self.assertEqual([t["id"] for t in self.tasks.list(kind="homelab")], [h["id"]])
+        self.assertEqual([t["id"] for t in self.tasks.list(kind="oneoff")], [chore["id"]])
+        # stages move; household tasks have none; done shows for the Done column
+        self.assertEqual(self.tasks.patch(h["id"], {"stage": "doing"})["stage"], "doing")
+        with self.assertRaises(TaskError):
+            self.tasks.patch(h["id"], {"stage": "shipped"})
+        with self.assertRaises(TaskError):
+            self.tasks.patch(chore["id"], {"stage": "doing"})
+        self.tasks.complete(h["id"], done_by="Alex", source="web")
+        self.assertEqual(self.tasks.list(kind="homelab"), [])
+        self.assertEqual([t["status"] for t in self.tasks.list(kind="homelab", done_days=14)], ["done"])
+        self.clock.set(date(2026, 11, 10), 8)
+        self.assertEqual(self.tasks.list(kind="homelab", done_days=14), [])
+        # reopening puts it back on the board
+        self.assertEqual(self.tasks.patch(h["id"], {"status": "open", "stage": "next"})["stage"], "next")
+        # moving between areas: a chore filed under a project, and back
+        moved = self.tasks.patch(chore["id"], {"category": "Home Assistant"})
+        self.assertEqual((moved["area"], moved["stage"]), ("homelab", "idea"))
+        back = self.tasks.patch(chore["id"], {"category": "Repairs & Maintenance"})
+        self.assertEqual((back["area"], back["stage"]), ("household", None))
+
     def test_old_p0_rows_migrate_to_high_with_alarm(self):
         import sqlite3
         path = str(Path(self.tmp.name) / "old.db")

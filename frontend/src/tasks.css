@@ -1,4 +1,4 @@
-/* Household tasks on Felt (design system 0.6). Shared components bring the
+/* Household tasks on Felt (design system 0.7). Shared components bring the
    controls and surfaces; this file is layout plus the few pieces the system
    doesn't have yet (board, split button, menu, celebration). Tokens only. */
 * {box-sizing:border-box}
@@ -112,6 +112,10 @@ a.ds-button {text-decoration:none; display:inline-flex; align-items:center; just
 .tasks-snoozed {display:block; font-size:.8125rem; font-weight:400; color:var(--ds-text-secondary)}
 .tasks-card-actions {display:flex; justify-content:flex-end; gap:6px; position:relative; z-index:1}
 .tasks-card-actions .ds-button {min-height:40px; padding-inline:16px}
+/* Homelab: four progress columns; finished cards step back. */
+.tasks-board.tasks-board-stages {grid-template-columns:repeat(4,minmax(0,1fr)); gap:16px}
+.tasks-card-done {box-shadow:none; background:transparent}
+.tasks-card-done .tasks-card-title {color:var(--ds-text-secondary); font-weight:500}
 .tasks-handle {flex:none; display:grid; place-items:center; width:32px; height:44px; margin-top:-8px; border:0; border-radius:10px; background:transparent; color:var(--ds-text-secondary); cursor:grab; touch-action:none; position:relative; z-index:1}
 .tasks-handle:hover {background:var(--ds-surface-inset); color:var(--ds-text)}
 .tasks-handle:focus-visible {outline:3px solid var(--ds-focus); outline-offset:2px}
@@ -163,8 +167,11 @@ a.ds-button {text-decoration:none; display:inline-flex; align-items:center; just
   @keyframes tasks-fade {0%,100% {opacity:0} 25%,70% {opacity:1}}
 }
 
+@media(max-width:1100px){
+  .tasks-board.tasks-board-stages {grid-template-columns:repeat(2,minmax(0,1fr))}
+}
 @media(max-width:900px){
-  .tasks-board {grid-template-columns:minmax(0,1fr)}
+  .tasks-board,.tasks-board.tasks-board-stages {grid-template-columns:minmax(0,1fr)}
   .tasks-metrics {grid-template-columns:repeat(2,minmax(0,1fr))}
 }
 @media(max-width:700px){

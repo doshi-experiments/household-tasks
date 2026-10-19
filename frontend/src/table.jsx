@@ -41,6 +41,7 @@ export function TaskTable({tasks, recurring, boot, ops, action, refreshing}) {
   }, [tasks, f, sort]);
   const filtering = Object.values(f).some(Boolean);
   const from = recurring ? 'recurring' : 'one-off';
+  const household = boot.categories.filter(c => c.area !== 'homelab'), homelab = boot.categories.filter(c => c.area === 'homelab');
   return <div className="tasks-stack-tight">
     {filtering && <div className="tasks-row"><span className="tasks-muted">Showing {shown.length} of {tasks.length} in this period</span>
       <Button variant="ghost" onClick={() => setF(empty)}>Clear filters</Button></div>}
@@ -54,7 +55,7 @@ export function TaskTable({tasks, recurring, boot, ops, action, refreshing}) {
           <td><input className="ds-text-input" aria-label="Filter by task" placeholder={recurring ? 'Task, notes or schedule' : 'Task or notes'}
             value={f.title} onChange={e => set('title', e.target.value)}/></td>
           <td><select className="ds-select-input" aria-label="Filter by category" value={f.category} onChange={e => set('category', e.target.value)}>
-            <option value="">All</option>{boot.categories.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}</select></td>
+            <option value="">All</option>{household.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}</select></td>
           <td><select className="ds-select-input" aria-label="Filter by priority" value={f.priority} onChange={e => set('priority', e.target.value)}>
             <option value="">All</option>{PRIORITIES.map(([p, l]) => <option key={p} value={p}>{l}</option>)}<option value="alarm">Alarm on</option></select></td>
           <td><select className="ds-select-input" aria-label="Filter by person" value={f.who} onChange={e => set('who', e.target.value)}>
@@ -71,7 +72,8 @@ export function TaskTable({tasks, recurring, boot, ops, action, refreshing}) {
           </td>
           <td><select className="ds-select-input tasks-inline-select tasks-category-select" aria-label={`Category for ${t.title}`} value={t.category}
             disabled={action.busy} onChange={e => ops.change(t, {category:e.target.value})}>
-            {boot.categories.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}</select></td>
+            {household.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+            <optgroup label="Move to Homelab">{homelab.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}</optgroup></select></td>
           <td><select className="ds-select-input tasks-inline-select" aria-label={`Priority for ${t.title}`} value={t.priority}
             disabled={action.busy} onChange={e => ops.change(t, {priority:PRIORITY_WORD[e.target.value]})}>
             {PRIORITIES.map(([p, l]) => <option key={p} value={p}>{l}</option>)}</select></td>

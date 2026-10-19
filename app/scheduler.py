@@ -275,7 +275,8 @@ class Scheduler:
         if not self.loop:
             return
         asyncio.run_coroutine_threadsafe(self.refresh_calendar(delay=15), self.loop)
-        if event in ("completed", "skipped", "snoozed", "archived"):
+        # (the calendar refresh stays: a task moved into homelab must leave HA's calendar)
+        if event in ("completed", "skipped", "snoozed", "archived") and task.get("area") != "homelab":
             asyncio.run_coroutine_threadsafe(self._after_close(event, task), self.loop)
 
     async def _after_close(self, event: str, task: dict):

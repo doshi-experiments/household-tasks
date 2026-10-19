@@ -5,15 +5,18 @@ import {useAction} from './hooks';
 import {Pending} from './pending';
 import {ScheduleBuilder} from './schedule-builder';
 import {PRIORITY_WORD, dueText} from './tasks';
+import {STAGES} from './homelab';
 import {celebrate} from './celebrate';
 
 const EMPTY = {title:'', notes:'', category:'Inbox', priority:2, alarm:false, assignee:'', due:'',
   schedule:{kind:'none', rrule:null, interval_n:null, interval_unit:null, flex:'exact', due_time:null}};
 const EMPTY_RECURRING = {...EMPTY, schedule:{...EMPTY.schedule, kind:'interval', interval_n:1, interval_unit:'weeks'}};
-const TAB_NAME = {'one-off':'One-off tasks', recurring:'Recurring tasks'};
+const EMPTY_HOMELAB = {...EMPTY, category:'New projects', priority:3, stage:'idea'};
+const TAB_NAME = {'one-off':'One-off tasks', recurring:'Recurring tasks', homelab:'Homelab'};
+const tabOf = t => t.area === 'homelab' ? 'homelab' : t.repeats ? 'recurring' : 'one-off';
 
 export function TaskForm({id, from = 'one-off', boot, me}) {
-  const [form, setForm] = useState(id ? null : from === 'recurring' ? EMPTY_RECURRING : EMPTY), [task, setTask] = useState(null), [history, setHistory] = useState([]);
+  const [form, setForm] = useState(id ? null : from === 'recurring' ? EMPTY_RECURRING : from === 'homelab' ? EMPTY_HOMELAB : EMPTY), [task, setTask] = useState(null), [history, setHistory] = useState([]);
   const [loadError, setLoadError] = useState(''), [confirmArchive, setConfirmArchive] = useState(false), [doneOn, setDoneOn] = useState('');
   const action = useAction();
   const load = async () => {
@@ -21,7 +24,7 @@ export function TaskForm({id, from = 'one-off', boot, me}) {
       const r = await api(`tasks/${id}`);
       const t = r.task;
       setTask(t); setHistory(r.completions);
-      setForm({title:t.title, notes:t.notes, category:t.category, priority:t.priority, alarm:t.alarm, assignee:t.assignee || '',
+      setForm({title:t.title, notes:t.notes, category:t.category, priority:t.priority, alarm:t.alarm, assignee:t.assignee || '', stage:t.stage || 'idea',
         due:t.due || '', schedule:{...t.schedule}});
     } catch (e) {setLoadError(e.message);}
   };
@@ -29,14 +32,20 @@ export function TaskForm({id, from = 'one-off', boot, me}) {
   if (loadError) return <Alert tone="error" title="Couldn’t open this task">{loadError}</Alert>;
   if (!form) return <Pending>Loading task…</Pending>;
   const set = patchObj => setForm(f => ({...f, ...patchObj}));
+  // the chosen category decides the kind of task: homelab ones have a stage and never remind
+  const household = boot.categories.filter(c => c.area !== 'homelab'), projects = boot.categories.filter(c => c.area === 'homelab');
+  const lab = projects.some(c => c.name === form.category);
 
   const save = () => action.run(async () => {
-    const body = {title:form.title, notes:form.notes, category:form.category, priority:PRIORITY_WORD[form.priority], alarm:form.alarm,
-      assignee:form.assignee || null, schedule:form.schedule};
+    const body = lab
+      ? {title:form.title, notes:form.notes, category:form.category, priority:PRIORITY_WORD[form.priority], stage:form.stage || 'idea'}
+      : {title:form.title, notes:form.notes, category:form.category, priority:PRIORITY_WORD[form.priority], alarm:form.alarm,
+        assignee:form.assignee || null, schedule:form.schedule};
     // Changing the date moves the next occurrence; leave it out unless it changed.
-    if (!task || form.due !== (task.due || '')) body.due = form.due || null;
+    if (!lab && (!task || form.due !== (task.due || ''))) body.due = form.due || null;
+    if (task && task.status === 'done' && lab) delete body.stage;   // a finished task keeps its stage until reopened
     const r = task ? await patch(`tasks/${task.id}`, body) : await post('tasks', {...body, source:'web', added_by:me});
-    if (!task) {location.hash = `#/task/${r.task.id}?from=${r.task.repeats ? 'recurring' : 'one-off'}`; return;}
+    if (!task || tabOf(r.task) !== tabOf(task)) {location.hash = `#/task/${r.task.id}?from=${tabOf(r.task)}`; if (task) {setTask(r.task); action.setNotice('Saved.');} return;}
     setTask(r.task); action.setNotice(`Saved. ${r.task.repeats ? `Next: ${r.task.due_text}.` : ''}`);
   }, 'save');
   const complete = event => action.run(async () => {
@@ -53,12 +62,16 @@ export function TaskForm({id, from = 'one-off', boot, me}) {
     const r = await post(`tasks/${task.id}/skip`, {done_by:me, source:'web', occurrence:task.occurrence});
     action.setNotice(`Skipped. Next one ${r.task.due_text}.`); await load();
   }, 'skip');
+  const reopen = () => action.run(async () => {
+    await patch(`tasks/${task.id}`, {status:'open'}); action.setNotice('Reopened.'); await load();
+  }, 'reopen');
   const archive = () => action.run(async () => {await del(`tasks/${task.id}`); location.hash = `#/${from}`;}, 'archive');
 
   const open = task?.status === 'open';
   return <div className="tasks-stack">
-    <PageHeader eyebrow={<a href={`#/${from}`}>← {TAB_NAME[from] || 'Tasks'}</a>} title={task ? task.title : from === 'recurring' ? 'New recurring task' : 'New task'}
-      description={task && <>{task.status === 'open' ? dueText(task) : `Status: ${task.status}`}{task.repeats ? ` · ${task.schedule_text}` : ''}</>}/>
+    <PageHeader eyebrow={<a href={`#/${from}`}>← {TAB_NAME[from] || 'Tasks'}</a>} title={task ? task.title : from === 'recurring' ? 'New recurring task' : from === 'homelab' ? 'New homelab task' : 'New task'}
+      description={task && (lab ? <>{task.status === 'open' ? STAGES.find(([s]) => s === (task.stage || 'idea'))[1] : `Status: ${task.status}`} · {task.category}</>
+        : <>{task.status === 'open' ? dueText(task) : `Status: ${task.status}`}{task.repeats ? ` · ${task.schedule_text}` : ''}</>)}/>
     {action.error && <Alert tone="error">{action.error}</Alert>}
     {action.notice && <Alert tone="success">{action.notice}</Alert>}
     {open && <Card><div className="tasks-row">
@@ -70,11 +83,28 @@ export function TaskForm({id, from = 'one-off', boot, me}) {
         {task.repeats && <Button loading={action.pending === 'skip'} disabled={action.busy} onClick={skip}>Skip this one</Button>}
       </div>
     </div></Card>}
+    {task?.status === 'done' && <Card><div className="tasks-row">
+      <span>This one is done.</span>
+      <Button loading={action.pending === 'reopen'} disabled={action.busy} onClick={reopen}>Reopen</Button>
+    </div></Card>}
     <Card className="tasks-stack-tight">
       <TextField label="Task" value={form.title} onValueChange={title => set({title})} required/>
-      <div className="tasks-grid">
+      {lab ? <div className="tasks-grid">
+        <SelectField label="Project" value={form.category} onValueChange={category => set({category})}>
+          {projects.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+          <optgroup label="Move to household">{household.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}</optgroup>
+        </SelectField>
+        <SelectField label="Priority" value={String(form.priority)} onValueChange={v => set({priority:Number(v)})}
+          hint="High: something running is broken or at risk. Medium: improves something you use. Low: an idea or something new.">
+          <option value="1">High</option><option value="2">Medium</option><option value="3">Low</option>
+        </SelectField>
+        {task?.status !== 'done' && <SelectField label="Stage" value={form.stage || 'idea'} onValueChange={stage => set({stage})}>
+          {STAGES.filter(([s]) => s !== 'done').map(([s, l]) => <option key={s} value={s}>{l}</option>)}
+        </SelectField>}
+      </div> : <><div className="tasks-grid">
         <SelectField label="Category" value={form.category} onValueChange={category => set({category})}>
-          {boot.categories.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+          {household.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+          <optgroup label="Move to Homelab">{projects.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}</optgroup>
         </SelectField>
         <SelectField label="Priority" value={String(form.priority)} onValueChange={v => set({priority:Number(v)})}
           hint={form.priority === 1 ? 'High also gets a daily push once it’s overdue.' : 'Shows in the morning and evening summaries.'}>
@@ -89,6 +119,7 @@ export function TaskForm({id, from = 'one-off', boot, me}) {
       <CheckboxField label="Alarm until done" checked={form.alarm} onCheckedChange={alarm => set({alarm})}
             hint="Pushes every day at its time and is read out on the speakers until someone marks it done."/>
       <ScheduleBuilder value={form.schedule} onChange={schedule => set({schedule})} anchor={form.due || task?.schedule.anchor_date}/>
+      </>}
       <label className="tasks-textarea"><span className="ds-field-label">Notes</span>
         <textarea className="ds-text-input" rows={3} value={form.notes} onChange={e => set({notes:e.target.value})}/></label>
       <div className="tasks-actions">

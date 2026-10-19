@@ -84,6 +84,15 @@ CATEGORIES = [
     ("Finances", "Bills, account checks, taxes, statements"),
     ("Inbox", "Anything that doesn't fit elsewhere yet"),
 ]
+# Homelab projects: software to build, update or host. These never remind anyone.
+HOMELAB_PROJECTS = [
+    ("Home Assistant", "Automations, dashboards, scripts, integrations and voice in Home Assistant"),
+    ("Tasks app", "This tasks service: its pages, reminders, schedules and integrations"),
+    ("Ingest bot", "The Telegram bot: what it understands, its lists and its replies"),
+    ("Portfolio site", "The personal website and portfolio"),
+    ("Infrastructure", "Docker hosts, containers, networking, Tailscale, backups, updates and security"),
+    ("New projects", "Ideas for new apps or services to build or self-host"),
+]
 SHOPPING_LISTS = [
     ("Groceries", "Food, drinks and anything from the grocery store"),
     ("Everything Else", "Household, hardware, pharmacy, online orders and anything not from a grocery store"),
@@ -101,14 +110,25 @@ class Store:
         with self.tx():
             for i, (name, hint) in enumerate(CATEGORIES):
                 self.db.execute("INSERT OR IGNORE INTO categories(name, sort, hint) VALUES (?,?,?)", (name, i, hint))
+            for i, (name, hint) in enumerate(HOMELAB_PROJECTS, 100):
+                self.db.execute("INSERT OR IGNORE INTO categories(name, sort, hint, area) VALUES (?,?,?,'homelab')",
+                                (name, i, hint))
             for i, (name, hint) in enumerate(SHOPPING_LISTS):
                 self.db.execute("INSERT OR IGNORE INTO shopping_lists(name, sort, hint) VALUES (?,?,?)", (name, i, hint))
 
     def _migrate(self):
         """2026-10-19: priorities are High/Medium/Low (1-3) plus an alarm flag
-        (the old P0 = High + alarm), and the board keeps a manual order."""
+        (the old P0 = High + alarm), and the board keeps a manual order.
+        2026-10-19: tasks belong to an area (household, or homelab with a
+        progress stage); a category's area decides its tasks' area."""
         cols = {r[1] for r in self.db.execute("PRAGMA table_info(tasks)")}
+        cat_cols = {r[1] for r in self.db.execute("PRAGMA table_info(categories)")}
         with self.tx() as db:
+            if "area" not in cat_cols:
+                db.execute("ALTER TABLE categories ADD COLUMN area TEXT NOT NULL DEFAULT 'household'")
+            if "area" not in cols:
+                db.execute("ALTER TABLE tasks ADD COLUMN area TEXT NOT NULL DEFAULT 'household'")
+                db.execute("ALTER TABLE tasks ADD COLUMN stage TEXT")
             if "alarm" not in cols:
                 db.execute("ALTER TABLE tasks ADD COLUMN alarm INTEGER NOT NULL DEFAULT 0")
                 db.execute("UPDATE tasks SET alarm=1, priority=1 WHERE priority=0")
