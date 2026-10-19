@@ -3,9 +3,9 @@ import {DndContext, DragOverlay, KeyboardSensor, PointerSensor, TouchSensor, clo
   useSensor, useSensors} from '@dnd-kit/core';
 import {SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy} from '@dnd-kit/sortable';
 import {CSS} from '@dnd-kit/utilities';
-import {Badge, Button} from '@doshi-experiments/design-system/react';
+import {Button} from '@doshi-experiments/design-system/react';
 import {SnoozeButton} from './snooze';
-import {PRIORITIES, PRIORITY_WORD, dueText} from './tasks';
+import {AlarmToggle, PRIORITIES, PRIORITY_WORD, dueText} from './tasks';
 
 const COLUMN = id => `col-${id}`;
 
@@ -130,9 +130,9 @@ function Card({task:t, recurring, ops, action, handle, overlay}) {
         </div>
         {recurring && <div className="tasks-card-meta">{t.schedule_text}</div>}
       </div>
-      {t.alarm && <Badge tone="error">Alarm</Badge>}
     </div>
     {!overlay && <div className="tasks-card-actions">
+      <AlarmToggle task={t} disabled={action.busy} loading={action.pending === `alarm:${t.id}`} onToggle={on => ops.alarm(t, on)}/>
       {t.state !== 'someday' && <SnoozeButton disabled={action.busy} loading={action.pending === `snooze:${t.id}`}
         onSnooze={until => ops.snooze(t, until)}/>}
       <Button variant="primary" loading={action.pending === `done:${t.id}`} disabled={action.busy}

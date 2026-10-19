@@ -1,6 +1,6 @@
 import React, {useEffect, useState} from 'react';
 import {createRoot} from 'react-dom/client';
-import {Alert, AppearanceControl, Button} from '@doshi-experiments/design-system/react';
+import {Alert, Button} from '@doshi-experiments/design-system/react';
 import {createAppearanceController} from '@doshi-experiments/design-system/theme';
 import '@doshi-experiments/design-system/tokens.css';
 import '@doshi-experiments/design-system/components.css';
@@ -14,6 +14,7 @@ import {ShoppingList} from './shopping';
 import {History} from './history';
 import {Celebration} from './celebrate';
 import {useMe} from './me';
+import {Select} from './controls';
 
 const theme = createAppearanceController({storageKey:'tasks-appearance', cookie:false});
 const paintThemeColor = () => document.querySelector('meta[name="theme-color"]')?.setAttribute('content', getComputedStyle(document.documentElement).getPropertyValue('--ds-surface-page').trim());
@@ -41,14 +42,10 @@ function App() {
     <header className="tasks-top">
       <a className="tasks-brand" href="#/one-off">Household tasks</a>
       <div className="tasks-top-controls">
-        {boot.data && <label className="tasks-me">
-          <span>I am</span>
-          <select className="ds-select-input" value={me} onChange={e => setMe(e.target.value)}>
-            <option value="">Choose…</option>
-            {boot.data.people.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
-          </select>
-        </label>}
-        <AppearanceControl value={appearance} onValueChange={value => theme.setPreference(value)}/>
+        {boot.data && <Select label="I am" layout="inline" size="small" value={me} onValueChange={setMe}
+          options={[['', 'Choose…'], ...boot.data.people.map(p => [p.name, p.name])]}/>}
+        <Select label="Appearance" layout="inline" size="small" value={appearance} onValueChange={value => theme.setPreference(value)}
+          options={[['system', 'System'], ['light', 'Light'], ['dark', 'Dark']]}/>
       </div>
     </header>
     <nav className="ds-tabs tasks-tabs" aria-label="Sections">
@@ -58,7 +55,6 @@ function App() {
       {boot.error && <Alert tone="error" title="Couldn’t reach Tasks" actions={<Button onClick={boot.reload}>Try again</Button>}>{boot.error}</Alert>}
       {boot.loading && !boot.data && <Pending>Loading…</Pending>}
       {boot.data && <>
-        {!me && page !== 'history' && <Alert tone="info">Choose who you are under “I am” so what you tick off shows your name.</Alert>}
         {(page === 'one-off' || page === 'recurring') && <TasksPage key={page} kind={page} boot={boot.data} me={me}/>}
         {page === 'homelab' && <HomelabPage boot={boot.data} me={me}/>}
         {page === 'task' && <TaskForm key={id} id={id === 'new' ? null : Number(id)} from={from} boot={boot.data} me={me}/>}

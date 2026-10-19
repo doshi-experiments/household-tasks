@@ -1,6 +1,7 @@
 import React, {useState} from 'react';
 import {Menu} from '@base-ui/react/menu';
-import {Button, Dialog, TextField} from '@doshi-experiments/design-system/react';
+import {Button, Dialog} from '@doshi-experiments/design-system/react';
+import {DateField} from './controls';
 
 const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const plus = n => {const d = new Date(); d.setHours(12); d.setDate(d.getDate() + n); return d;};
@@ -40,7 +41,7 @@ export function SnoozeButton({onSnooze, disabled, loading}) {
     </Menu.Root>
     <Dialog open={picking} onOpenChange={setPicking} title="Snooze until" description="It stays on its schedule; this only hides it until then."
       actions={<Button variant="primary" disabled={!date} onClick={() => {setPicking(false); onSnooze(date);}}>Snooze</Button>}>
-      <TextField label="Date" type="date" min={iso(plus(1))} value={date} onValueChange={setDate}/>
+      <DateField label="Date" min={iso(plus(1))} value={date} onValueChange={setDate} clearable={false}/>
     </Dialog>
   </>;
 }

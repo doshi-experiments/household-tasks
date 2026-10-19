@@ -6,6 +6,7 @@ import {Pending} from './pending';
 import {TaskBoard} from './board';
 import {TaskTable} from './table';
 import {celebrate} from './celebrate';
+import {Select} from './controls';
 
 export const PRIORITIES = [[1, 'High'], [2, 'Medium'], [3, 'Low']];
 export const PRIORITY_WORD = {1:'high', 2:'medium', 3:'low'};
@@ -16,6 +17,22 @@ export function dueText(t) {
   if (t.state === 'someday') return <span className="tasks-muted">No date</span>;
   return <span className={t.state === 'due' ? 'tasks-due' : ''}>{t.due_text}{t.schedule.due_time ? ` · ${t.schedule.due_time}` : ''}
     {t.snoozed_until && <span className="tasks-snoozed">snoozed</span>}</span>;
+}
+
+/** Shows whether a task's alarm is on and switches it. On is error-tinted with
+    words (never bare red); off is quiet. */
+export function AlarmToggle({task:t, onToggle, disabled, loading}) {
+  return <button type="button" className={`tasks-alarm${t.alarm ? ' is-on' : ''}`} aria-pressed={t.alarm}
+    disabled={disabled || loading} aria-busy={loading || undefined} onClick={() => onToggle(!t.alarm)}
+    title={t.alarm ? 'Alarm until done is on: tap to turn it off' : 'Turn on “alarm until done”'}
+    aria-label={`Alarm until done for ${t.title}`}>
+    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+      <path d="M8 2.2a4 4 0 0 0-4 4v2.6L2.8 11h10.4L12 8.8V6.2a4 4 0 0 0-4-4ZM6.4 12.8a1.7 1.7 0 0 0 3.2 0"
+        fill={t.alarm ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
+      {!t.alarm && <path d="M2.5 2.5l11 11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>}
+    </svg>
+    <span>{t.alarm ? 'Alarm on' : 'Alarm off'}</span>
+  </button>;
 }
 
 const viewKey = kind => `tasks-view-${kind}`;
@@ -68,6 +85,14 @@ export function TasksPage({kind, boot, me}) {
       }
       await list.reload();
     }, `snooze:${t.id}`),
+    alarm: (t, on) => action.run(async () => {
+      const r = await patch(`tasks/${t.id}`, {alarm:on});
+      const n = r.task;
+      action.setNotice(!on ? `Alarm off: ${t.title}.`
+        : n.eff_due ? `Alarm on: ${t.title}. It pushes at ${n.schedule.due_time || '17:30'} every day from ${n.due_text} until it’s done.`
+        : `Alarm on: ${t.title}. It starts once the task has a due date.`);
+      await list.reload();
+    }, `alarm:${t.id}`),
     change: (t, body, quiet) => action.run(async () => {
       await patch(`tasks/${t.id}`, body);
       if (!quiet) action.setNotice(`Updated ${t.title}.`);
@@ -84,12 +109,8 @@ export function TasksPage({kind, boot, me}) {
       actions={<a className="ds-button" data-variant="primary" href={`#/task/new?from=${kind}`}>New task</a>}/>
     <div className="tasks-toolbar">
       <SegmentedControl label="View" value={view} onValueChange={chooseView} options={[['board', 'Board'], ['table', 'Table']]}/>
-      <label className="tasks-period">
-        <span>Show</span>
-        <select className="ds-select-input" value={period} onChange={e => choosePeriod(e.target.value)}>
-          {PERIODS.map(([p, label]) => <option key={p} value={p}>{label} ({inEach[p]})</option>)}
-        </select>
-      </label>
+      <Select label="Show" layout="inline" value={period} onValueChange={choosePeriod} className="tasks-period"
+        options={PERIODS.map(([p, label]) => [p, `${label} (${inEach[p]})`])}/>
       {(overdue > 0 || alarms > 0) && <span className="tasks-attention" role="status">
         {overdue > 0 && <Badge tone="error">{overdue} overdue</Badge>}
         {alarms > 0 && <Badge tone="error">{alarms} alarm{alarms === 1 ? '' : 's'} due</Badge>}

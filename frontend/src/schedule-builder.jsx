@@ -1,10 +1,12 @@
 import React, {useEffect, useState} from 'react';
-import {Button, CheckboxField, SegmentedControl, SelectField, TextField} from '@doshi-experiments/design-system/react';
+import {Button, CheckboxField, SegmentedControl, TextField} from '@doshi-experiments/design-system/react';
+import {Select, TimeField} from './controls';
 import {post} from './api';
 
 const DAYS = [['MO', 'Mon'], ['TU', 'Tue'], ['WE', 'Wed'], ['TH', 'Thu'], ['FR', 'Fri'], ['SA', 'Sat'], ['SU', 'Sun']];
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const SEASONS = [[3, 'Spring'], [6, 'Summer'], [9, 'Fall'], [12, 'Winter']];
+const DAY_NUMBERS = Array.from({length:31}, (_, i) => [String(i + 1), String(i + 1)]);
 
 // Split an RRULE into the builder's calendar modes; anything else is "custom".
 export function ruleToParts(rule) {
@@ -79,39 +81,30 @@ export function ScheduleBuilder({value, onChange, anchor}) {
 
     {value.kind === 'interval' && <div className="tasks-inline">
       <TextField label="Every" type="number" min="1" inputMode="numeric" value={String(value.interval_n || '')} onValueChange={v => set({interval_n:Number(v) || ''})}/>
-      <SelectField label="Unit" value={value.interval_unit || 'days'} onValueChange={u => set({interval_unit:u})}>
-        <option value="days">days</option><option value="weeks">weeks</option><option value="months">months</option><option value="years">years</option>
-      </SelectField>
+      <Select label="Unit" value={value.interval_unit || 'days'} onValueChange={u => set({interval_unit:u})}
+        options={[['days', 'days'], ['weeks', 'weeks'], ['months', 'months'], ['years', 'years']]}/>
       <p className="tasks-muted tasks-inline-note">Counts from when it was last done, so a late one moves the next one too.</p>
     </div>}
 
     {value.kind === 'rrule' && <>
-      <SelectField label="Pattern" value={parts.mode} onValueChange={mode => setRule({mode})}>
-        <option value="weekly">Weekly on certain days</option><option value="monthly">Monthly on a day</option>
-        <option value="yearly">Yearly on a date</option><option value="seasonal">Seasonally</option><option value="custom">Custom rule</option>
-      </SelectField>
+      <Select label="Pattern" value={parts.mode} onValueChange={mode => setRule({mode})}
+        options={[['weekly', 'Weekly on certain days'], ['monthly', 'Monthly on a day'], ['yearly', 'Yearly on a date'], ['seasonal', 'Seasonally'], ['custom', 'Custom rule']]}/>
       {parts.mode === 'weekly' && <>
-        <SelectField label="How often" value={String(parts.every)} onValueChange={v => setRule({every:Number(v)})}>
-          <option value="1">Every week</option><option value="2">Every other week</option><option value="3">Every 3 weeks</option><option value="4">Every 4 weeks</option>
-        </SelectField>
+        <Select label="How often" value={String(parts.every)} onValueChange={v => setRule({every:Number(v)})}
+          options={[['1', 'Every week'], ['2', 'Every other week'], ['3', 'Every 3 weeks'], ['4', 'Every 4 weeks']]}/>
         <fieldset className="tasks-chips"><legend>On</legend>{DAYS.map(([code, label]) =>
           <CheckboxField key={code} label={label} checked={parts.days.includes(code)} onCheckedChange={() => setRule({days:toggle(parts.days, code)})}/>)}</fieldset>
       </>}
       {parts.mode === 'monthly' && <div className="tasks-inline">
-        <SelectField label="How often" value={String(parts.every)} onValueChange={v => setRule({every:Number(v)})}>
-          <option value="1">Every month</option><option value="2">Every 2 months</option><option value="3">Every 3 months (quarterly)</option><option value="6">Every 6 months</option>
-        </SelectField>
-        <SelectField label="On day" value={String(parts.day)} onValueChange={v => setRule({day:Number(v)})}>
-          {Array.from({length:31}, (_, i) => <option key={i + 1} value={i + 1}>{i + 1}</option>)}<option value="-1">Last day</option>
-        </SelectField>
+        <Select label="How often" value={String(parts.every)} onValueChange={v => setRule({every:Number(v)})}
+          options={[['1', 'Every month'], ['2', 'Every 2 months'], ['3', 'Every 3 months (quarterly)'], ['6', 'Every 6 months']]}/>
+        <Select label="On day" value={String(parts.day)} onValueChange={v => setRule({day:Number(v)})}
+          options={[...DAY_NUMBERS, ['-1', 'Last day']]}/>
       </div>}
       {parts.mode === 'yearly' && <div className="tasks-inline">
-        <SelectField label="Month" value={String(parts.month)} onValueChange={v => setRule({month:Number(v)})}>
-          {MONTHS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
-        </SelectField>
-        <SelectField label="Day" value={String(parts.day)} onValueChange={v => setRule({day:Number(v)})}>
-          {Array.from({length:31}, (_, i) => <option key={i + 1} value={i + 1}>{i + 1}</option>)}
-        </SelectField>
+        <Select label="Month" value={String(parts.month)} onValueChange={v => setRule({month:Number(v)})}
+          options={MONTHS.map((m, i) => [String(i + 1), m])}/>
+        <Select label="Day" value={String(parts.day)} onValueChange={v => setRule({day:Number(v)})} options={DAY_NUMBERS}/>
       </div>}
       {parts.mode === 'seasonal' && <fieldset className="tasks-chips"><legend>At the start of</legend>{SEASONS.map(([m, label]) =>
         <CheckboxField key={m} label={label} checked={parts.seasons.includes(m)} onCheckedChange={() => setRule({seasons:toggle(parts.seasons, m)})}/>)}</fieldset>}
@@ -125,7 +118,7 @@ export function ScheduleBuilder({value, onChange, anchor}) {
         <CheckboxField label="Any time that weekend" hint="Mon–Thu dates move to Friday; overdue from the Monday after." checked={value.flex === 'weekend'}
           onCheckedChange={on => set({flex:on ? 'weekend' : 'exact'})}/>
       </fieldset>
-      <TextField label="Time" hint="New tasks default to 5:30 PM." type="time" value={value.due_time || ''} onValueChange={v => set({due_time:v || null})}/>
+      <TimeField label="Time" hint="New tasks default to 5:30 PM." value={value.due_time || ''} onValueChange={v => set({due_time:v || null})}/>
     </div>
     {preview && (preview.error
       ? <p className="tasks-field-error" role="status">{preview.error}</p>

@@ -38,7 +38,7 @@ Visual checks: screenshots of the live pages with headless Chromium (a throwaway
 - **`app/web.py`**: FastAPI routes, auth middleware, hooks for HA, `/calendar.ics`, and the built SPA.
 - **`app/store.py`**: SQLite schema; `_migrate` applies schema changes on start. Add new migrations there, never by hand.
 - **`app/ha.py`, `app/bot.py`**: Home Assistant REST (notification hub script, speech, switches, calendars) and ingest-bot's `/tasks-message`.
-- **`frontend/src`**: React. `main.jsx` (tabs and routes), `tasks.jsx` (page, period filter, shared actions), `board.jsx` (generic dnd-kit `Board`; `TaskBoard` = priority columns), `homelab.jsx` (the progress board), `table.jsx` (sort, filters, inline edits), `snooze.jsx`, `task-form.jsx` with `schedule-builder.jsx`, `shopping.jsx`, `history.jsx`, `celebrate.jsx`, `tasks.css`.
+- **`frontend/src`**: React. `main.jsx` (tabs and routes), `tasks.jsx` (page, period filter, shared actions), `board.jsx` (generic dnd-kit `Board`; `TaskBoard` = priority columns), `homelab.jsx` (the progress board), `table.jsx` (sort, filters, inline edits), `snooze.jsx`, `controls.jsx` (the app's Select, DateField and TimeField; use these, not native select/date/time inputs), `task-form.jsx` with `schedule-builder.jsx`, `shopping.jsx`, `history.jsx`, `celebrate.jsx`, `tasks.css`.
 
 ## Design
 

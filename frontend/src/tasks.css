@@ -13,8 +13,6 @@ button,input,select,textarea {font:inherit}
 .tasks-top {display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px 24px; padding:24px 0 12px}
 .tasks-brand {font:600 1.125rem/1.2 var(--ds-font-display); letter-spacing:-.02em; color:var(--ds-text); text-decoration:none}
 .tasks-top-controls {display:flex; flex-wrap:wrap; align-items:center; gap:12px 20px}
-.tasks-me {display:flex; align-items:center; gap:10px; font-weight:600; font-size:.875rem}
-.tasks-me .ds-select-input {width:auto; min-width:120px}
 .tasks-schedule .ds-segmented {justify-self:start}
 .tasks-tabs {margin-bottom:8px}
 .tasks-main {outline:none}
@@ -26,8 +24,7 @@ button,input,select,textarea {font:inherit}
 .tasks-row {display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px 16px}
 .tasks-toolbar {display:flex; align-items:center; flex-wrap:wrap; gap:12px 20px}
 .tasks-toolbar-count {margin-left:auto}
-.tasks-period {display:flex; align-items:center; gap:10px; font-weight:600; font-size:.875rem; color:var(--ds-text-secondary)}
-.tasks-period .ds-select-input {width:auto; min-width:190px; color:var(--ds-text); font-weight:500}
+.tasks-period .tasks-picker {min-width:200px}
 .tasks-attention {display:inline-flex; gap:6px}
 .tasks-actions {display:flex; align-items:center; flex-wrap:wrap; gap:8px}
 .tasks-metrics {display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:16px 24px}
@@ -42,6 +39,9 @@ button,input,select,textarea {font:inherit}
 .tasks-refreshing {opacity:.6; transition:opacity var(--ds-duration-fast)}
 .tasks-fallback {max-width:700px; margin:10vh auto; padding:24px}
 .tasks-pending {display:flex; align-items:center; gap:10px}
+/* Shorter controls than the system's 44px default (asked for 2026-10-19). */
+.ds-button {min-height:36px; padding:6px 16px; line-height:1.25}
+.ds-segment {min-height:36px; padding:6px 14px}
 a.ds-button {text-decoration:none; display:inline-flex; align-items:center; justify-content:center}
 .ds-button[aria-busy="true"] {display:inline-flex; align-items:center; justify-content:center; gap:8px; cursor:progress}
 .ds-button[aria-busy="true"]::before,.tasks-pending::before {content:""; flex:none; width:1em; height:1em; border:2px solid currentColor; border-right-color:transparent; border-radius:50%; animation:tasks-spin .7s linear infinite}
@@ -63,17 +63,68 @@ a.ds-button {text-decoration:none; display:inline-flex; align-items:center; just
 .tasks-textarea {display:grid; gap:6px}
 .tasks-textarea textarea {resize:vertical; min-height:4.5em}
 
+/* Pickers (controls.jsx): the app's own select, date and time controls. Fields
+   are pressed in like the system's inputs; their popups are the snooze menu's felt. */
+.tasks-picker {box-sizing:border-box; display:flex; align-items:center; justify-content:space-between; gap:10px; width:100%; min-height:40px; padding:6px 12px 6px 14px; border:1px solid var(--ds-border); border-radius:var(--ds-radius-control); background:var(--ds-surface-inset); box-shadow:var(--ds-shadow-pressed); color:var(--ds-text); font:400 1rem/1.4 var(--ds-font-body); text-align:left; cursor:pointer}
+.tasks-picker.is-small {min-height:36px; padding:4px 10px 4px 12px; font-size:.875rem}
+.tasks-picker-quiet {background:transparent; border-color:transparent; box-shadow:none; font-weight:500}
+.tasks-picker-quiet:is(:hover,[data-popup-open]) {background:var(--ds-surface-inset); border-color:var(--ds-border)}
+.tasks-picker:focus-visible {outline:3px solid var(--ds-focus); outline-offset:3px}
+.tasks-picker:disabled,.tasks-picker[data-disabled] {cursor:not-allowed; color:var(--ds-text-disabled)}
+.tasks-picker-value {min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.tasks-picker-value.is-placeholder {color:var(--ds-text-secondary)}
+.tasks-picker-icon {flex:none; color:var(--ds-text-secondary); transition:rotate var(--ds-duration-fast) var(--ds-ease)}
+.tasks-picker-field > .ds-field-label {display:block}
+.tasks-picker-field.is-inline {display:flex; align-items:center; gap:10px}
+.tasks-picker-field.is-inline > .ds-field-label {margin:0; white-space:nowrap; font-size:.875rem}
+.tasks-picker-field.is-inline .tasks-picker {width:auto; min-width:128px}
+.tasks-select-popup {min-width:var(--anchor-width); max-height:min(360px, var(--available-height)); overflow-y:auto}
+.tasks-option {display:flex; align-items:center; justify-content:space-between; gap:16px; min-height:38px; padding:0 12px; border-radius:10px; cursor:pointer; outline:none; font-weight:500; white-space:nowrap}
+.tasks-option[data-highlighted] {background:var(--ds-selection)}
+.tasks-option[data-selected] {font-weight:700}
+.tasks-option-check {display:flex; color:var(--ds-action-link)}
+.tasks-option-group {margin-top:6px; padding-top:6px; border-top:1.5px dashed var(--ds-stitch)}
+.tasks-option-group-label {padding:4px 12px 6px; font-size:.75rem; font-weight:700; color:var(--ds-text-secondary)}
+.tasks-date-popup {padding:10px}
+.tasks-calendar-head {display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:4px}
+.tasks-calendar-title {font-weight:600}
+.tasks-icon-button {display:grid; place-items:center; width:34px; height:34px; border:0; border-radius:50%; background:transparent; color:var(--ds-text); cursor:pointer}
+.tasks-icon-button:hover {background:var(--ds-selection)}
+.tasks-calendar-grid {border-collapse:separate; border-spacing:2px}
+.tasks-calendar-grid th {padding:4px 0; font-size:.75rem; font-weight:600; color:var(--ds-text-secondary); text-align:center}
+.tasks-calendar-grid td {padding:0}
+.tasks-day {display:grid; place-items:center; width:38px; height:36px; border:0; border-radius:10px; background:transparent; color:var(--ds-text); font:500 .875rem/1 var(--ds-font-body); font-variant-numeric:tabular-nums; cursor:pointer}
+.tasks-day:hover {background:var(--ds-selection)}
+.tasks-day.is-outside {color:var(--ds-text-secondary)}
+.tasks-day.is-today {box-shadow:inset 0 0 0 1.5px var(--ds-text-secondary)}
+.tasks-day.is-selected {background:var(--ds-action-gradient, var(--ds-action-primary)); color:var(--ds-action-text); font-weight:700; box-shadow:none}
+.tasks-day:disabled {background:none; color:var(--ds-text-disabled); cursor:not-allowed}
+.tasks-calendar-foot {display:flex; justify-content:space-between; gap:8px; margin-top:6px; padding-top:6px; border-top:1.5px dashed var(--ds-stitch)}
+.tasks-calendar-foot:empty {display:none}
+.tasks-text-button {padding:6px 10px; border:0; border-radius:8px; background:none; color:var(--ds-action-link); font:600 .875rem/1.2 var(--ds-font-body); cursor:pointer; white-space:nowrap}
+.tasks-text-button:hover {background:var(--ds-selection)}
+:is(.tasks-day,.tasks-icon-button,.tasks-text-button):focus-visible {outline:3px solid var(--ds-focus); outline-offset:1px}
+
+/* Alarm toggle: on = error tint with words (never bare red); off = quiet. */
+.tasks-alarm {display:inline-flex; align-items:center; gap:6px; min-height:30px; padding:4px 10px; border:1px solid transparent; border-radius:var(--ds-radius-pill); background:transparent; color:var(--ds-text-secondary); font:600 .8125rem/1 var(--ds-font-body); white-space:nowrap; cursor:pointer}
+.tasks-alarm:hover:not(:disabled) {background:var(--ds-surface-inset)}
+.tasks-alarm.is-on {background:var(--ds-error-bg); color:var(--ds-error-text); border-color:color-mix(in srgb, var(--ds-error-text) 30%, transparent)}
+.tasks-alarm:focus-visible {outline:3px solid var(--ds-focus); outline-offset:2px}
+.tasks-alarm:disabled {cursor:not-allowed}
+.tasks-alarm[aria-busy="true"] {cursor:progress; opacity:.7}
+
 /* Table: a filter under every heading; category and priority edit in place. */
-.tasks-table td {vertical-align:top}
+.tasks-table td {vertical-align:middle}
 .tasks-table th, .tasks-table td {white-space:normal}
 .tasks-table td:first-child {white-space:nowrap}
 .tasks-filter-row td {padding-top:4px; padding-bottom:12px; position:sticky; top:44px; background:var(--ds-surface-raised)}
-.tasks-filter-row .ds-select-input,.tasks-filter-row .ds-text-input {min-height:40px; padding:6px 12px; font-size:.875rem; min-width:120px}
-.tasks-title-cell {min-width:220px}
-.tasks-inline-select {min-height:40px; padding:6px 8px 6px 12px; font-size:.875rem; min-width:130px; background-color:transparent; border-color:transparent; box-shadow:none}
-.tasks-inline-select:is(:hover,:focus-visible) {background-color:var(--ds-surface-inset); border-color:var(--ds-border)}
-.tasks-category-select {min-width:196px}
-.tasks-table td:first-child {min-width:120px}
+.tasks-filter-row .ds-text-input {min-height:36px; padding:4px 12px; font-size:.875rem; min-width:110px}
+.tasks-filter-row .tasks-picker {min-width:0}
+.tasks-filter-clear {text-align:right; vertical-align:middle !important}
+.tasks-title-cell {min-width:180px}
+.tasks-table td .tasks-picker-quiet {width:auto; max-width:100%; gap:6px; padding-inline:8px}
+.tasks-table :is(th,td) {padding-inline:10px}
+.tasks-table td:first-child {min-width:104px}
 .tasks-table .tasks-actions {flex-wrap:nowrap}
 .tasks-table-empty {text-align:center; padding:32px 16px; color:var(--ds-text-secondary)}
 .tasks-sort {display:inline-flex; align-items:center; gap:6px; padding:4px 0; border:0; background:none; color:inherit; font:inherit; font-weight:600; cursor:pointer}
@@ -83,7 +134,7 @@ a.ds-button {text-decoration:none; display:inline-flex; align-items:center; just
 .tasks-filter-note {font-size:.8125rem; vertical-align:middle !important}
 
 /* Snooze: one raised secondary pill that opens the menu. */
-.tasks-snooze {display:inline-flex; align-items:center; gap:6px; min-height:40px; padding-inline:16px 12px}
+.tasks-snooze {display:inline-flex; align-items:center; gap:6px; padding-inline:16px 12px}
 .tasks-snooze[data-popup-open] {box-shadow:var(--ds-shadow-pressed); background:var(--ds-surface-inset)}
 .tasks-menu-positioner {z-index:150}
 .tasks-menu {min-width:180px; padding:6px; border-radius:var(--ds-radius-control); background:var(--ds-surface-overlay); color:var(--ds-text); box-shadow:var(--ds-shadow-overlay); outline:none}
@@ -102,7 +153,8 @@ a.ds-button {text-decoration:none; display:inline-flex; align-items:center; just
 .tasks-card {position:relative; display:grid; gap:8px; padding:12px 14px 10px 8px; border-radius:18px; background:var(--ds-surface-raised); box-shadow:var(--ds-shadow-raised)}
 .tasks-card::after {content:""; position:absolute; inset:5px; border:1.5px dashed var(--ds-stitch); border-radius:14px; pointer-events:none; opacity:.7}
 .tasks-card.is-overlay {cursor:grabbing; rotate:1.5deg; box-shadow:var(--ds-shadow-overlay)}
-.tasks-card-top {display:flex; align-items:flex-start; gap:6px}
+.tasks-card-top {display:flex; align-items:center; gap:6px}
+.tasks-card-top > .ds-badge {align-self:flex-start}
 .tasks-card-text {min-width:0; flex:1; display:grid; gap:4px}
 .tasks-card-title {color:var(--ds-text); font-weight:600; text-decoration:none; overflow-wrap:anywhere; line-height:1.35}
 .tasks-card-title:hover {text-decoration:underline; color:var(--ds-action-link)}
@@ -110,20 +162,22 @@ a.ds-button {text-decoration:none; display:inline-flex; align-items:center; just
 .tasks-card-meta {column-gap:14px}
 .tasks-card-meta > :first-child {color:var(--ds-text); font-weight:500}
 .tasks-snoozed {display:block; font-size:.8125rem; font-weight:400; color:var(--ds-text-secondary)}
-.tasks-card-actions {display:flex; justify-content:flex-end; gap:6px; position:relative; z-index:1}
-.tasks-card-actions .ds-button {min-height:40px; padding-inline:16px}
+.tasks-card-actions {display:flex; align-items:center; justify-content:flex-end; gap:6px; position:relative; z-index:1}
+.tasks-card-actions > .tasks-alarm {margin-right:auto}
+.tasks-card-actions .ds-button {min-height:34px; padding-block:4px}
 /* Homelab: four progress columns; finished cards step back. */
 .tasks-board.tasks-board-stages {grid-template-columns:repeat(4,minmax(0,1fr)); gap:16px}
 .tasks-card-done {box-shadow:none; background:transparent}
 .tasks-card-done .tasks-card-title {color:var(--ds-text-secondary); font-weight:500}
-.tasks-handle {flex:none; display:grid; place-items:center; width:32px; height:44px; margin-top:-8px; border:0; border-radius:10px; background:transparent; color:var(--ds-text-secondary); cursor:grab; touch-action:none; position:relative; z-index:1}
+.tasks-handle {flex:none; display:grid; place-items:center; width:32px; height:40px; border:0; border-radius:10px; background:transparent; color:var(--ds-text-secondary); cursor:grab; touch-action:none; position:relative; z-index:1}
 .tasks-handle:hover {background:var(--ds-surface-inset); color:var(--ds-text)}
 .tasks-handle:focus-visible {outline:3px solid var(--ds-focus); outline-offset:2px}
 
 /* Shopping: large targets for use in a store. */
 .tasks-shopping {max-width:640px}
 .tasks-quick-add {display:flex; gap:8px; position:sticky; top:0; z-index:5; padding:8px 0}
-.tasks-quick-add > input {flex:1; min-height:48px; font-size:1.0625rem}
+.tasks-quick-add {align-items:center}
+.tasks-quick-add > input {flex:1; min-height:44px; font-size:1.0625rem}
 .tasks-items {list-style:none; margin:0; padding:0; display:grid}
 .tasks-items > li {display:flex; align-items:stretch; border-bottom:1.5px dashed var(--ds-stitch)}
 .tasks-item {flex:1; display:flex; align-items:center; gap:14px; min-height:52px; padding:8px 4px; background:none; border:0; color:inherit; text-align:left; cursor:pointer}
@@ -181,5 +235,5 @@ a.ds-button {text-decoration:none; display:inline-flex; align-items:center; just
   .tasks-phrase > .ds-button {margin-top:0}
   .tasks-main .ds-page-header h1 {font-size:var(--ds-text-title)}
   .tasks-top-controls {gap:12px; width:100%}
-  .tasks-me {flex-direction:column; align-items:flex-start; gap:4px; font-size:.8125rem}
+  .tasks-top-controls .tasks-picker-field.is-inline {flex-direction:column; align-items:flex-start; gap:4px}
 }

@@ -14,10 +14,11 @@ One place for the household's chores, one-off to-dos and shopping lists, plus a 
 | **One-off** | Things to do once. **Board** view: High / Medium / Low columns; drag a card by its handle (or focus the handle, Space, arrows, Space) to reorder it or change its priority. **Table** view: sort by any heading, filter any column, change category and priority in place. |
 | **Recurring** | Chores on a schedule. Same Board and Table views. **Done** moves a task to its next date. |
 | **Homelab** | Software to build, update or host, by project (Home Assistant, Tasks app, Ingest bot, Portfolio site, Infrastructure, New projects). A progress board: **Ideas → Next up → Doing → Done** (Done shows the last 14 days; dragging a card out of Done reopens it). Cards sort by priority within a column. **Nothing here ever sends a reminder.** |
-| **Shopping** | Groceries and Everything Else. Tap an item to tick it off; Undo is right there. |
+| **Shopping** | Groceries or Everything Else (the toggle picks which list you see, and new items go on it). Tap an item to tick it off; Undo is right there. |
 | **History** | What was done or skipped, by whom and from where (web, Telegram, phone, the Dog Meds switch). |
 
 - **Show** (above both views): Due now, Next 7 days, This month or All, with counts. Overdue tasks always show.
+- **Alarm on / Alarm off** on every household card and table row switches “alarm until done” in place (a daily critical push at its time, 17:30 by default, from its due date until it's done).
 - **Snooze ▾** hides a dated task until Tomorrow, In 3 days, This weekend, Next week or a date you pick. It never counts as done and never changes the schedule.
 - **"I am"** (top right) is remembered per browser and is who gets credit for what you tick off.
 - Done plays a short random dog moment (paw prints, a dog popping up, or hearts and bones). With reduced motion it's a simple fade.
@@ -141,6 +142,7 @@ compose.yaml, Dockerfile, requirements.txt
 
 ## Change log
 
+- **2026-10-19** — UI round 4: an Alarm on/off toggle on household cards and a new Alarm column in the table (with a filter); the app's own dropdowns, date picker (calendar popover, keyboard friendly) and half-hour time picker replace the browser's (`frontend/src/controls.jsx`, Base UI Select and Popover); buttons and toggles 36px (34px on cards); drag handles centred on the card text; the table's filter count is gone (Clear filters sits in the filter row, so the table doesn't move); the "choose who you are" note is gone; the shopping toggle now shows one list at a time and adds to it.
 - **2026-10-19** — Homelab tab: a progress board (Ideas → Next up → Doing → Done) for software projects, grouped by project with a filter. Tasks and categories gain an `area`; homelab tasks have a `stage` and never notify (`Tasks.open_tasks()` is household-only). The edit form switches to Project, Priority and Stage for them; either form can move a task between household and Homelab. Board drags with the keyboard now jump a whole column per Left/Right press. The Telegram bot files and prioritises homelab work itself (see its README).
 - **2026-10-19** — Design system 0.7.0 (signal red): primary buttons are a raspberry-to-brick gradient with white text, links and focus are brick red. Overdue is now an error badge (tinted background and words) instead of red text and a red card edge, so it never reads as the brand colour; the shopping tick uses the signal gradient.
 - **2026-10-19** — Repo created; README and CLAUDE.md written. `ha/` holds placeholder templates; house-specific exports and network addresses stay out of git (`ha/local/`, `.env`'s `TASKS_BIND_ADDR`).

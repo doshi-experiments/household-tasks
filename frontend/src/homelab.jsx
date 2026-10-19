@@ -6,6 +6,7 @@ import {Pending} from './pending';
 import {Board} from './board';
 import {PRIORITY_TONE, dueText} from './tasks';
 import {celebrate} from './celebrate';
+import {Select} from './controls';
 
 export const STAGES = [['idea', 'Ideas'], ['next', 'Next up'], ['doing', 'Doing'], ['done', 'Done']];
 const DONE_DAYS = 14;
@@ -71,13 +72,8 @@ export function HomelabPage({boot, me}) {
       description="Software to build, update or host. Nothing here sends reminders. Drag a card to the next column as it moves along."
       actions={<a className="ds-button" data-variant="primary" href="#/task/new?from=homelab">New task</a>}/>
     <div className="tasks-toolbar">
-      <label className="tasks-period">
-        <span>Project</span>
-        <select className="ds-select-input" value={project} onChange={e => chooseProject(e.target.value)}>
-          <option value="">All projects ({open.length})</option>
-          {projects.map(c => <option key={c.name} value={c.name}>{c.name} ({count(c.name)})</option>)}
-        </select>
-      </label>
+      <Select label="Project" layout="inline" value={project} onValueChange={chooseProject} className="tasks-period"
+        options={[['', `All projects (${open.length})`], ...projects.map(c => [c.name, `${c.name} (${count(c.name)})`])]}/>
       <span className="tasks-muted tasks-toolbar-count">{open.length} open · done in the last {DONE_DAYS} days shown</span>
     </div>
     {action.error && <Alert tone="error">{action.error}</Alert>}

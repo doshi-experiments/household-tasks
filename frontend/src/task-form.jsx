@@ -1,5 +1,6 @@
 import React, {useEffect, useState} from 'react';
-import {Alert, Button, Card, CheckboxField, DataTable, Dialog, PageHeader, SelectField, TextField} from '@doshi-experiments/design-system/react';
+import {Alert, Button, Card, CheckboxField, DataTable, Dialog, PageHeader, TextField} from '@doshi-experiments/design-system/react';
+import {DateField, Select} from './controls';
 import {api, del, patch, post} from './api';
 import {useAction} from './hooks';
 import {Pending} from './pending';
@@ -13,6 +14,7 @@ const EMPTY = {title:'', notes:'', category:'Inbox', priority:2, alarm:false, as
 const EMPTY_RECURRING = {...EMPTY, schedule:{...EMPTY.schedule, kind:'interval', interval_n:1, interval_unit:'weeks'}};
 const EMPTY_HOMELAB = {...EMPTY, category:'New projects', priority:3, stage:'idea'};
 const TAB_NAME = {'one-off':'One-off tasks', recurring:'Recurring tasks', homelab:'Homelab'};
+const PRIORITY_OPTIONS = [['1', 'High'], ['2', 'Medium'], ['3', 'Low']];
 const tabOf = t => t.area === 'homelab' ? 'homelab' : t.repeats ? 'recurring' : 'one-off';
 
 export function TaskForm({id, from = 'one-off', boot, me}) {
@@ -76,7 +78,7 @@ export function TaskForm({id, from = 'one-off', boot, me}) {
     {action.notice && <Alert tone="success">{action.notice}</Alert>}
     {open && <Card><div className="tasks-row">
       <div className="tasks-inline">
-        <TextField label="Done on (optional)" type="date" value={doneOn} onValueChange={setDoneOn} hint="Leave empty for now."/>
+        <DateField label="Done on (optional)" value={doneOn} onValueChange={setDoneOn} placeholder="Now" hint="Leave empty for now."/>
       </div>
       <div className="tasks-actions">
         <Button variant="primary" loading={action.pending === 'complete'} disabled={action.busy} onClick={e => complete(e)}>Mark done</Button>
@@ -90,30 +92,21 @@ export function TaskForm({id, from = 'one-off', boot, me}) {
     <Card className="tasks-stack-tight">
       <TextField label="Task" value={form.title} onValueChange={title => set({title})} required/>
       {lab ? <div className="tasks-grid">
-        <SelectField label="Project" value={form.category} onValueChange={category => set({category})}>
-          {projects.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
-          <optgroup label="Move to household">{household.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}</optgroup>
-        </SelectField>
-        <SelectField label="Priority" value={String(form.priority)} onValueChange={v => set({priority:Number(v)})}
-          hint="High: something running is broken or at risk. Medium: improves something you use. Low: an idea or something new.">
-          <option value="1">High</option><option value="2">Medium</option><option value="3">Low</option>
-        </SelectField>
-        {task?.status !== 'done' && <SelectField label="Stage" value={form.stage || 'idea'} onValueChange={stage => set({stage})}>
-          {STAGES.filter(([s]) => s !== 'done').map(([s, l]) => <option key={s} value={s}>{l}</option>)}
-        </SelectField>}
+        <Select label="Project" value={form.category} onValueChange={category => set({category})}
+          options={projects.map(c => [c.name, c.name])} groups={[['Move to household', household.map(c => [c.name, c.name])]]}/>
+        <Select label="Priority" value={String(form.priority)} onValueChange={v => set({priority:Number(v)})} options={PRIORITY_OPTIONS}
+          hint="High: something running is broken or at risk. Medium: improves something you use. Low: an idea or something new."/>
+        {task?.status !== 'done' && <Select label="Stage" value={form.stage || 'idea'} onValueChange={stage => set({stage})}
+          options={STAGES.filter(([s]) => s !== 'done')}/>}
       </div> : <><div className="tasks-grid">
-        <SelectField label="Category" value={form.category} onValueChange={category => set({category})}>
-          {household.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
-          <optgroup label="Move to Homelab">{projects.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}</optgroup>
-        </SelectField>
-        <SelectField label="Priority" value={String(form.priority)} onValueChange={v => set({priority:Number(v)})}
-          hint={form.priority === 1 ? 'High also gets a daily push once it’s overdue.' : 'Shows in the morning and evening summaries.'}>
-          <option value="1">High</option><option value="2">Medium</option><option value="3">Low</option>
-        </SelectField>
-        <SelectField label="Who" value={form.assignee} onValueChange={assignee => set({assignee})} hint="Assigned tasks notify that person; others notify everyone.">
-          <option value="">Anyone</option>{boot.people.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-        </SelectField>
-        <TextField label={form.schedule.kind === 'none' ? 'Due date' : 'Next due'} type="date" value={form.due || ''} onValueChange={due => set({due})}
+        <Select label="Category" value={form.category} onValueChange={category => set({category})}
+          options={household.map(c => [c.name, c.name])} groups={[['Move to Homelab', projects.map(c => [c.name, c.name])]]}/>
+        <Select label="Priority" value={String(form.priority)} onValueChange={v => set({priority:Number(v)})} options={PRIORITY_OPTIONS}
+          hint={form.priority === 1 ? 'High also gets a daily push once it’s overdue.' : 'Shows in the morning and evening summaries.'}/>
+        <Select label="Who" value={form.assignee} onValueChange={assignee => set({assignee})} hint="Assigned tasks notify that person; others notify everyone."
+          options={[['', 'Anyone'], ...boot.people.map(p => [p.id, p.name])]}/>
+        <DateField label={form.schedule.kind === 'none' ? 'Due date' : 'Next due'} value={form.due || ''} onValueChange={due => set({due})}
+          placeholder={form.schedule.kind === 'none' ? 'Someday' : 'Today'}
           hint={form.schedule.kind === 'none' ? 'Leave empty for “someday”.' : task ? 'Change it to move the next one.' : 'Leave empty to start today.'}/>
       </div>
       <CheckboxField label="Alarm until done" checked={form.alarm} onCheckedChange={alarm => set({alarm})}
