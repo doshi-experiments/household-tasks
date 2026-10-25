@@ -9,6 +9,25 @@ from .tasks import TaskError
 
 KEEP_BOUGHT_DAYS = 90
 
+# Every item carries a category (groceries or not), a store and an aisle.
+# Unknown categories coerce to Other; unknown stores are created on the fly
+# ("buy tarp from home depot" via the bot adds Home Depot); unknown aisles
+# coerce to '' against the item's store.
+ITEM_CATEGORIES = ["Groceries", "Home Improvement", "Pharmacy & Health", "Pet Supplies", "Electronics", "Other"]
+DEFAULT_CATEGORY = "Groceries"
+DEFAULT_STORE = "Real Canadian Superstore"
+AISLES = {
+    "Real Canadian Superstore": ["Produce", "Bakery", "Deli", "Dairy & Eggs", "Meat & Seafood", "Frozen",
+                                 "Pantry", "Snacks", "Beverages", "Health & Beauty", "Household", "Other"],
+    "Costco": ["Produce", "Bakery", "Deli & Prepared", "Dairy", "Meat & Seafood", "Frozen", "Pantry & Snacks",
+               "Beverages", "Health & Beauty", "Household", "Electronics", "Clothing", "Other"],
+}
+DEFAULT_AISLES = ["Food", "Household", "Health", "Other"]
+
+
+def aisles_for(store: str) -> list[str]:
+    return AISLES.get(store, DEFAULT_AISLES)
+
 
 class Lists:
     """Named lists in one table (categories or shopping_lists)."""
@@ -82,9 +101,40 @@ class Shopping:
 
     def _list(self, name) -> str:
         found = self.lists.find(name or "Groceries")
-        if not found or found["archived"]:
+        if not found:
             raise TaskError(400, f"No shopping list {name!r}.")
+        if found["archived"]:
+            # A stale caller (the bot caches lists for a minute) naming an
+            # archived list lands on the default list instead of failing.
+            return self.lists.find("Groceries")["name"]
         return found["name"]
+
+    def stores(self) -> list[dict]:
+        return self.store.all("SELECT * FROM stores WHERE archived=0 ORDER BY sort, name")
+
+    @staticmethod
+    def _category(value) -> str:
+        v = str(value or "").strip()
+        if not v:
+            return DEFAULT_CATEGORY
+        return next((c for c in ITEM_CATEGORIES if c.lower() == v.lower()), "Other")
+
+    def _store(self, db, value) -> str:
+        """The matching store's name, creating the store when it's new."""
+        v = str(value or "").strip()[:60]
+        if not v:
+            return DEFAULT_STORE
+        hit = db.execute("SELECT name FROM stores WHERE lower(name)=lower(?)", (v,)).fetchone()
+        if hit:
+            return hit[0]
+        top = db.execute("SELECT coalesce(max(sort),0)+1 FROM stores").fetchone()[0]
+        db.execute("INSERT INTO stores(name, sort) VALUES (?,?)", (v, top))
+        return v
+
+    @staticmethod
+    def _aisle(value, store: str) -> str:
+        v = str(value or "").strip()
+        return next((a for a in aisles_for(store) if a.lower() == v.lower()), "")
 
     def get(self, item_id: int) -> dict:
         row = self.store.one("SELECT * FROM items WHERE id=?", (item_id,))
@@ -111,22 +161,24 @@ class Shopping:
                 if not title:
                     continue
                 lst = self._list(it.get("list"))
-                dup = db.execute("SELECT * FROM items WHERE bought_at IS NULL AND list=? AND lower(title)=lower(?)",
-                                 (lst, title)).fetchone()
+                store = self._store(db, it.get("store"))
+                dup = db.execute("SELECT * FROM items WHERE bought_at IS NULL AND list=? AND store=?"
+                                 " AND lower(title)=lower(?)", (lst, store, title)).fetchone()
                 if dup:
                     out.append({**dict(dup), "duplicate": True})
                     continue
                 pos = db.execute("SELECT coalesce(max(position),0)+1 FROM items WHERE list=?", (lst,)).fetchone()[0]
-                cur = db.execute("INSERT INTO items(title, list, notes, added_by, position, source, created_at, updated_at)"
-                                 " VALUES (?,?,?,?,?,?,?,?)",
+                cur = db.execute("INSERT INTO items(title, list, notes, added_by, position, source, created_at,"
+                                 " updated_at, category, store, aisle) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                                  (title[:200], lst, str(it.get("notes") or ""), str(it.get("added_by") or ""), pos,
-                                  str(it.get("source") or ""), now, now))
+                                  str(it.get("source") or ""), now, now, self._category(it.get("category")), store,
+                                  self._aisle(it.get("aisle"), store)))
                 out.append({**dict(db.execute("SELECT * FROM items WHERE id=?", (cur.lastrowid,)).fetchone()),
                             "duplicate": False})
         return out
 
     def patch(self, item_id: int, body: dict) -> dict:
-        self.get(item_id)
+        row = self.get(item_id)
         updates = {}
         if "title" in body and str(body["title"] or "").strip():
             updates["title"] = str(body["title"]).strip()[:200]
@@ -134,10 +186,20 @@ class Shopping:
             updates["notes"] = str(body["notes"] or "")
         if "list" in body:
             updates["list"] = self._list(body["list"])
-        if not updates:
-            return self.get(item_id)
-        updates["updated_at"] = self._now()
+        if "category" in body:
+            updates["category"] = self._category(body["category"])
         with self.store.tx() as db:
+            store = row["store"]
+            if "store" in body:
+                store = self._store(db, body["store"])
+                updates["store"] = store
+            if "aisle" in body:
+                updates["aisle"] = self._aisle(body["aisle"], store)
+            elif store != row["store"] and self._aisle(row["aisle"], store) != row["aisle"]:
+                updates["aisle"] = ""   # the old aisle isn't one of the new store's
+            if not updates:
+                return row
+            updates["updated_at"] = self._now()
             db.execute(f"UPDATE items SET {', '.join(f'{k}=?' for k in updates)} WHERE id=?", (*updates.values(), item_id))
         return self.get(item_id)
 

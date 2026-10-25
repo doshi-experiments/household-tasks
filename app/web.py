@@ -24,7 +24,7 @@ from . import schedule as sch
 from .bot import Bot
 from .ha import HomeAssistant
 from .scheduler import Scheduler
-from .shopping import Lists, Shopping
+from .shopping import AISLES, DEFAULT_AISLES, DEFAULT_CATEGORY, DEFAULT_STORE, ITEM_CATEGORIES, Lists, Shopping
 from .store import Store
 from .tasks import TaskError, Tasks
 
@@ -103,6 +103,9 @@ def create_app(cfg=None, store=None, clock=None, start_scheduler=True):
     @app.get("/api/bootstrap")
     def bootstrap():
         return {"categories": categories.all(), "shopping_lists": shopping.lists.all(),
+                "shopping": {"item_categories": ITEM_CATEGORIES, "stores": [s["name"] for s in shopping.stores()],
+                             "aisles": AISLES, "default_aisles": DEFAULT_AISLES,
+                             "defaults": {"category": DEFAULT_CATEGORY, "store": DEFAULT_STORE}},
                 "people": [{"id": p.id, "name": p.name} for p in cfg.people],
                 "tz": cfg.tz_name, "today": tasks.today().isoformat(), "notify_enabled": cfg.notify_enabled,
                 "settings": {"digest_morning": cfg.digest_morning, "digest_evening": cfg.digest_evening,

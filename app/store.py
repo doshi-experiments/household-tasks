@@ -24,6 +24,8 @@ CREATE TABLE IF NOT EXISTS items (
   source TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_items_open ON items(bought_at, list, position);
+CREATE TABLE IF NOT EXISTS stores (
+  name TEXT PRIMARY KEY, sort INTEGER NOT NULL DEFAULT 0, archived INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS tasks (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   title TEXT NOT NULL,
@@ -95,9 +97,10 @@ HOMELAB_PROJECTS = [
     ("New projects", "Ideas for new apps or services to build or self-host"),
 ]
 SHOPPING_LISTS = [
-    ("Groceries", "Food, drinks and anything from the grocery store"),
-    ("Everything Else", "Household, hardware, pharmacy, online orders and anything not from a grocery store"),
+    ("Groceries", "Everything we need to buy, from any store"),
 ]
+# Seed stores; anyone naming a new store on an item adds it on the fly.
+STORES = ["Real Canadian Superstore", "Costco"]
 
 
 class Store:
@@ -116,6 +119,8 @@ class Store:
                                 (name, i, hint))
             for i, (name, hint) in enumerate(SHOPPING_LISTS):
                 self.db.execute("INSERT OR IGNORE INTO shopping_lists(name, sort, hint) VALUES (?,?,?)", (name, i, hint))
+            for i, name in enumerate(STORES):
+                self.db.execute("INSERT OR IGNORE INTO stores(name, sort) VALUES (?,?)", (name, i))
 
     def _migrate(self):
         """2026-10-19: priorities are High/Medium/Low (1-3) plus an alarm flag
@@ -123,10 +128,13 @@ class Store:
         2026-10-19: tasks belong to an area (household, or homelab with a
         progress stage); a category's area decides its tasks' area.
         2026-10-24: a completion keeps the task fields it changed (JSON), so the
-        newest done or skip can be undone."""
+        newest done or skip can be undone.
+        2026-10-25: one shopping list; Everything Else merges into Groceries
+        (its items categorised Other) and items carry category, store and aisle."""
         cols = {r[1] for r in self.db.execute("PRAGMA table_info(tasks)")}
         cat_cols = {r[1] for r in self.db.execute("PRAGMA table_info(categories)")}
         done_cols = {r[1] for r in self.db.execute("PRAGMA table_info(completions)")}
+        item_cols = {r[1] for r in self.db.execute("PRAGMA table_info(items)")}
         with self.tx() as db:
             if "undo" not in done_cols:
                 db.execute("ALTER TABLE completions ADD COLUMN undo TEXT NOT NULL DEFAULT ''")
@@ -143,6 +151,16 @@ class Store:
                 rows = db.execute("SELECT id FROM tasks ORDER BY priority, coalesce(due, '9999'), lower(title)").fetchall()
                 for i, (tid,) in enumerate(rows, 1):
                     db.execute("UPDATE tasks SET position=? WHERE id=?", (i * 1024.0, tid))
+            if "category" not in item_cols:
+                db.execute("ALTER TABLE items ADD COLUMN category TEXT NOT NULL DEFAULT 'Groceries'")
+                db.execute("ALTER TABLE items ADD COLUMN store TEXT NOT NULL DEFAULT 'Real Canadian Superstore'")
+                db.execute("ALTER TABLE items ADD COLUMN aisle TEXT NOT NULL DEFAULT ''")
+                db.execute("UPDATE items SET category='Other' WHERE list='Everything Else'")
+                off = db.execute("SELECT coalesce(max(position),0) FROM items WHERE list='Groceries'").fetchone()[0]
+                db.execute("UPDATE items SET list='Groceries', position=position+? WHERE list='Everything Else'", (off,))
+                db.execute("UPDATE shopping_lists SET archived=1 WHERE name='Everything Else'")
+                db.execute("UPDATE shopping_lists SET hint='Everything we need to buy, from any store'"
+                           " WHERE name='Groceries'")
 
     @contextmanager
     def tx(self):
