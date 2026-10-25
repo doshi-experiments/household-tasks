@@ -170,6 +170,14 @@ def create_app(cfg=None, store=None, clock=None, start_scheduler=True):
         return {"task": tasks.skip(task_id, body.get("done_by", ""), body.get("source", "api"),
                                    body.get("occurrence"), body.get("note", ""))}
 
+    @app.post("/api/tasks/{task_id}/undo")
+    def undo_task(task_id: int, body: dict = Body(...)):
+        try:
+            completion_id = int(body.get("completion_id"))
+        except (TypeError, ValueError):
+            raise TaskError(400, "completion_id is the id a done or skip returned.") from None
+        return {"task": tasks.undo(task_id, completion_id)}
+
     @app.post("/api/tasks/{task_id}/snooze")
     def snooze_task(task_id: int, body: dict = Body(default={})):
         return {"task": tasks.snooze(task_id, body.get("until"), body.get("days"), body.get("occurrence"),

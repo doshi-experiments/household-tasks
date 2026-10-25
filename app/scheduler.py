@@ -299,6 +299,21 @@ class Scheduler:
         # (the calendar refresh stays: a task moved into homelab must leave HA's calendar)
         if event in ("completed", "skipped", "snoozed", "archived") and task.get("area") != "homelab":
             asyncio.run_coroutine_threadsafe(self._after_close(event, task), self.loop)
+        if event == "undone" and task.get("area") != "homelab":
+            asyncio.run_coroutine_threadsafe(self._after_undo(task), self.loop)
+
+    async def _after_undo(self, task: dict):
+        """A done taken back: the switch goes on again if today's alarm had already
+        turned it on (the ledger won't let p0_push do it twice). Pushes it cleared
+        are not sent again."""
+        entity = self._switch_entity(task)
+        if not (entity and task["alarm"] and task["state"] in ("due", "overdue")):
+            return
+        today = self.tasks.today().isoformat()
+        if not any(self.sent(task["id"], "switch_on", today, key) for key in ("ha_switch", "dry-ha_switch")):
+            return
+        await self.deliver(task["id"], "switch_on_undo", self.tasks.now().isoformat(timespec="minutes"), "ha_switch",
+                           lambda: self.ha.set_switch(entity, True), f"{entity} on")
 
     async def _after_close(self, event: str, task: dict):
         bucket = self.tasks.now().isoformat(timespec="minutes")

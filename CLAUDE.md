@@ -35,7 +35,7 @@ The household's task and shopping service, running live as the Dockge stack `/op
 ## Commands
 
 ```bash
-docker compose build tasks && docker run --rm --network none tasks-tasks python -m unittest discover tests   # 38 offline tests
+docker compose build tasks && docker run --rm --network none tasks-tasks python -m unittest discover tests   # 47 offline tests
 docker compose up -d --build tasks
 docker compose logs --since=30m tasks | grep -E 'sent|dry-run|failed|WARNING'
 T=$(grep ^TASKS_API_TOKEN= .env | cut -d= -f2-)
@@ -57,7 +57,7 @@ Visual checks: screenshots of the live pages with headless Chromium (a throwaway
 
 ## Design
 
-- **Change the design system, not this app.** A look or component the system doesn't have (a size, a variant, a new control) goes into `@doshi-experiments/design-system` as a release, and this app then moves onto it; don't override `.ds-*` classes here. Examples: buttons and toggles use its `size="small"` (0.7.1) rather than local CSS; pickers (`Select`, `DateField`, `TimeField`; never native select/date/time inputs), toasts (`toast(title, description)`), the snooze `MenuButton` and the alarm `ToggleButton` come from it (0.8.0). The board is the one app-made piece left.
+- **Change the design system, not this app.** A look or component the system doesn't have (a size, a variant, a new control) goes into `@doshi-experiments/design-system` as a release, and this app then moves onto it; don't override `.ds-*` classes here. Examples: buttons and toggles use its `size="small"` (0.7.1) rather than local CSS; pickers (`Select`, `DateField`, `TimeField`; never native select/date/time inputs), toasts (`toast(title, description)`), the snooze `MenuButton` and the alarm `ToggleButton` come from it (0.8.0), and toasts carry Undo through its toast `action` (0.9.0). The board is the one app-made piece left.
 - Use the design system's components and tokens (`@doshi-experiments/design-system`, a private package: its tarball sits in `frontend/vendor/` on this host and is gitignored, never commit it; its README and `docs/identity.md` live at `/opt/stacks/design-system`). To upgrade, build a tarball from its repo (`git archive` + `npm pack`), swap the vendored file and the `package.json` path, and rebuild the lockfile in `node:24-slim`.
 - Felt rules followed here: underline tabs for local navigation (no global header in this private app), segmented controls for two-way switches, raised pills for buttons, pressed-in for fields only (don't nest recessed surfaces), stitched dashed rules to group form sections. The signal (0.7) is a red gradient under white text and is only ever a fill; text in that hue uses `action-link`. Error red must always come with its tinted background and words (use an error `Badge`), never bare red text, so it can't be mistaken for the brand.
 - Copy: sentence case, plain verbs, the action's name repeated in its outcome ("Done: …", "Snoozed … until …").

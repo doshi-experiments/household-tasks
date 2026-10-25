@@ -141,5 +141,22 @@ class Phrases(unittest.TestCase):
                          "quarterly on the 7th")
 
 
+
+class SplitPhrase(unittest.TestCase):
+    """Quick add: a schedule at the end of a title is read off it."""
+    def test_trailing_schedule_is_split_off(self):
+        title, got = s.split_phrase("Water the plants every Saturday at 9am")
+        self.assertEqual(title, "Water the plants")
+        self.assertEqual((got["kind"], got["rrule"], got["due_time"]), ("rrule", "FREQ=WEEKLY;BYDAY=SA", "09:00"))
+        title, got = s.split_phrase("Clean the filter, every 30 days")
+        self.assertEqual((title, got["interval_n"], got["interval_unit"]), ("Clean the filter", 30, "days"))
+        self.assertEqual(s.split_phrase("Descale kettle monthly")[0], "Descale kettle")
+
+    def test_no_schedule_or_nothing_left(self):
+        self.assertEqual(s.split_phrase("Update the weekly report"), ("Update the weekly report", None))
+        self.assertEqual(s.split_phrase("monthly"), ("monthly", None))
+        self.assertEqual(s.split_phrase("  "), ("", None))
+
+
 if __name__ == "__main__":
     unittest.main()

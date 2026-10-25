@@ -294,6 +294,23 @@ def parse_phrase(text: str) -> dict:
     raise ScheduleError(f"I couldn't read the schedule {text!r}.")
 
 
+def split_phrase(text: str) -> tuple[str, dict | None]:
+    """Split "water the plants every Saturday" into ("water the plants", schedule).
+
+    The longest run of trailing words that parse_phrase reads is the schedule;
+    the rest is the title. -> (text, None) when no ending reads as one, or when
+    nothing would be left for the title.
+    """
+    words = (text or "").split()
+    for i in range(1, len(words)):
+        try:
+            schedule = parse_phrase(" ".join(words[i:]))
+        except ScheduleError:
+            continue
+        return " ".join(words[:i]).rstrip(" ,;:-–—"), schedule
+    return (text or "").strip(), None
+
+
 # ---------------------------------------------------------------- descriptions
 
 def _ordinal(n: int) -> str:

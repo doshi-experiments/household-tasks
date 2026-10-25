@@ -1,24 +1,25 @@
 import React, {useEffect, useState} from 'react';
-import {Alert, Button, Card, CheckboxField, DataTable, DateField, Dialog, PageHeader, Select, TextField, toast} from '@doshi-experiments/design-system/react';
+import {Alert, Button, Card, CheckboxField, DataTable, DateField, PageHeader, Select, TextField, toast} from '@doshi-experiments/design-system/react';
 import {api, del, patch, post} from './api';
-import {useAction} from './hooks';
+import {useAction, useOnChange} from './hooks';
 import {Pending} from './pending';
 import {ScheduleBuilder} from './schedule-builder';
 import {PRIORITY_WORD, dueText} from './tasks';
 import {STAGES} from './homelab';
 import {celebrate} from './celebrate';
+import {addedToast, archivedToast, doneToast} from './undo';
 
 const EMPTY = {title:'', notes:'', category:'Inbox', priority:2, alarm:false, assignee:'', due:'',
   schedule:{kind:'none', rrule:null, interval_n:null, interval_unit:null, flex:'exact', due_time:null}};
 const EMPTY_RECURRING = {...EMPTY, schedule:{...EMPTY.schedule, kind:'interval', interval_n:1, interval_unit:'weeks'}};
 const EMPTY_HOMELAB = {...EMPTY, category:'New projects', priority:3, stage:'idea'};
 const TAB_NAME = {'one-off':'One-off tasks', recurring:'Recurring tasks', homelab:'Homelab'};
-const PRIORITY_OPTIONS = [['1', 'High'], ['2', 'Medium'], ['3', 'Low']];
+const PRIORITY_OPTIONS = [['3', 'Low'], ['2', 'Medium'], ['1', 'High']];
 const tabOf = t => t.area === 'homelab' ? 'homelab' : t.repeats ? 'recurring' : 'one-off';
 
 export function TaskForm({id, from = 'one-off', boot, me}) {
   const [form, setForm] = useState(id ? null : from === 'recurring' ? EMPTY_RECURRING : from === 'homelab' ? EMPTY_HOMELAB : EMPTY), [task, setTask] = useState(null), [history, setHistory] = useState([]);
-  const [loadError, setLoadError] = useState(''), [confirmArchive, setConfirmArchive] = useState(false), [doneOn, setDoneOn] = useState('');
+  const [loadError, setLoadError] = useState(''), [doneOn, setDoneOn] = useState('');
   const action = useAction();
   const load = async () => {
     try {
@@ -30,6 +31,7 @@ export function TaskForm({id, from = 'one-off', boot, me}) {
     } catch (e) {setLoadError(e.message);}
   };
   useEffect(() => {if (id) load();}, [id]);
+  useOnChange(() => {if (id) load();});
   if (loadError) return <Alert tone="error" title="Couldn’t open this task">{loadError}</Alert>;
   if (!form) return <Pending>Loading task…</Pending>;
   const set = patchObj => setForm(f => ({...f, ...patchObj}));
@@ -48,8 +50,8 @@ export function TaskForm({id, from = 'one-off', boot, me}) {
     const r = task ? await patch(`tasks/${task.id}`, body) : await post('tasks', {...body, source:'web', added_by:me});
     // Saving closes the task: back to its tab, with a toast to confirm.
     const moved = task && tabOf(r.task) !== tabOf(task);
-    toast(`${task ? 'Saved' : 'Added'}: ${r.task.title}`,
-      moved ? `Moved to ${TAB_NAME[tabOf(r.task)]}.` : r.task.repeats ? `Next one ${r.task.due_text}.` : undefined);
+    const note = moved ? `Moved to ${TAB_NAME[tabOf(r.task)]}.` : r.task.repeats ? `Next one ${r.task.due_text}.` : undefined;
+    if (task) toast(`Saved: ${r.task.title}`, note); else addedToast(r.task, note);
     location.hash = `#/${!task || moved ? tabOf(r.task) : from}`;
   }, 'save');
   const complete = event => action.run(async () => {
@@ -58,19 +60,20 @@ export function TaskForm({id, from = 'one-off', boot, me}) {
       const r = await post(`tasks/${task.id}/complete`, {done_by:me, source:'web', occurrence:task.occurrence,
         ...(doneOn ? {done_at:`${doneOn}T12:00:00`} : {})});
       celebrate(ev);
-      action.setNotice(r.task.closed ? 'Done.' : `Done. Next one ${r.task.due_text}.`);
-    } catch (e) {if (e.status !== 409) throw e; action.setNotice('That one was already done.');}
+      doneToast(task, r.task);
+    } catch (e) {if (e.status !== 409) throw e; toast(`${task.title} was already done.`, undefined, {tone:'info'});}
     setDoneOn(''); await load();
   }, 'complete');
   const skip = () => action.run(async () => {
     const r = await post(`tasks/${task.id}/skip`, {done_by:me, source:'web', occurrence:task.occurrence});
-    action.setNotice(`Skipped. Next one ${r.task.due_text}.`); await load();
+    toast(`Skipped: ${task.title}`, `Next one ${r.task.due_text}.`); await load();
   }, 'skip');
   const reopen = () => action.run(async () => {
-    await patch(`tasks/${task.id}`, {status:'open'}); action.setNotice('Reopened.'); await load();
+    await patch(`tasks/${task.id}`, {status:'open'}); toast(`Reopened: ${task.title}`); await load();
   }, 'reopen');
+  // no "are you sure": the toast's Undo brings it back as it was
   const archive = () => action.run(async () => {
-    await del(`tasks/${task.id}`); toast(`Archived: ${task.title}`, 'Its history is kept.'); location.hash = `#/${from}`;
+    await del(`tasks/${task.id}`); archivedToast(task, task.status); location.hash = `#/${from}`;
   }, 'archive');
 
   const open = task?.status === 'open';
@@ -79,7 +82,6 @@ export function TaskForm({id, from = 'one-off', boot, me}) {
       description={task && (lab ? <>{task.status === 'open' ? STAGES.find(([s]) => s === (task.stage || 'idea'))[1] : `Status: ${task.status}`} · {task.category}</>
         : <>{task.status === 'open' ? dueText(task) : `Status: ${task.status}`}{task.repeats ? ` · ${task.schedule_text}` : ''}</>)}/>
     {action.error && <Alert tone="error">{action.error}</Alert>}
-    {action.notice && <Alert tone="success">{action.notice}</Alert>}
     {open && <Card><div className="tasks-row">
       <div className="tasks-inline">
         <DateField label="Done on (optional)" value={doneOn} onValueChange={setDoneOn} placeholder="Now" hint="Leave empty for now."/>
@@ -121,7 +123,7 @@ export function TaskForm({id, from = 'one-off', boot, me}) {
         <textarea className="ds-text-input" rows={3} value={form.notes} onChange={e => set({notes:e.target.value})}/></label>
       <div className="tasks-actions">
         <Button size="small" variant="primary" loading={action.pending === 'save'} disabled={action.busy || !form.title.trim()} onClick={save}>{task ? 'Save changes' : 'Add task'}</Button>
-        {task && task.status !== 'archived' && <Button size="small" variant="ghost" disabled={action.busy} onClick={() => setConfirmArchive(true)}>Archive</Button>}
+        {task && task.status !== 'archived' && <Button size="small" variant="ghost" loading={action.pending === 'archive'} disabled={action.busy} onClick={archive}>Archive</Button>}
       </div>
     </Card>
     {task && !!history.length && <section><h2>History</h2><DataTable aria-label="History">
@@ -129,7 +131,5 @@ export function TaskForm({id, from = 'one-off', boot, me}) {
       <tbody>{history.map(h => <tr key={h.id}><td className="tasks-nowrap">{h.done_at.slice(0, 16).replace('T', ' ')}</td>
         <td>{h.kind === 'done' ? 'Done' : 'Skipped'}{h.nominal_due ? ` (due ${h.nominal_due})` : ''}</td><td>{h.done_by || '—'}</td><td>{h.source}</td></tr>)}</tbody>
     </DataTable></section>}
-    <Dialog open={confirmArchive} onOpenChange={setConfirmArchive} title="Archive this task?" description="It stops appearing and stops reminding. Its history is kept."
-      actions={<Button size="small" variant="primary" onClick={archive} loading={action.pending === 'archive'}>Archive</Button>}/>
   </div>;
 }

@@ -1,13 +1,15 @@
 import React, {useState} from 'react';
-import {Alert, Badge, EmptyState, PageHeader, SegmentedControl, Select, ToggleButton} from '@doshi-experiments/design-system/react';
+import {Alert, Badge, EmptyState, PageHeader, SegmentedControl, Select, ToggleButton, toast} from '@doshi-experiments/design-system/react';
 import {patch, post} from './api';
-import {useAction, useResource} from './hooks';
+import {useAction, useOnChange, useResource} from './hooks';
 import {Pending} from './pending';
 import {TaskBoard} from './board';
 import {TaskTable} from './table';
 import {celebrate} from './celebrate';
+import {addedToast, doneToast} from './undo';
 
-export const PRIORITIES = [[1, 'High'], [2, 'Medium'], [3, 'Low']];
+// Low to High everywhere; the board turns it round once its columns stack on a phone.
+export const PRIORITIES = [[3, 'Low'], [2, 'Medium'], [1, 'High']];
 export const PRIORITY_WORD = {1:'high', 2:'medium', 3:'low'};
 export const PRIORITY_TONE = {1:'warning', 2:'info', 3:undefined};
 
@@ -60,6 +62,8 @@ export function TasksPage({kind, boot, me}) {
   const choosePeriod = v => {setPeriod(v); try {localStorage.setItem(periodKey(kind), v);} catch {/* private window */}};
   const tasks = list.data?.tasks || [];
   const inView = tasks.filter(t => inPeriod(t, period));
+  useOnChange(list.reload);
+  const alreadyDone = t => toast(`${t.title} was already done.`, undefined, {tone:'info'});
 
   // one place for every write, so the board and the table behave the same
   const ops = {
@@ -67,36 +71,51 @@ export function TasksPage({kind, boot, me}) {
       try {
         const r = await post(`tasks/${t.id}/complete`, {done_by:me, source:'web', occurrence:t.occurrence});
         celebrate(event);
-        action.setNotice(r.task.closed ? `Done: ${t.title}.` : `Done: ${t.title}. Next one ${r.task.due_text}.`);
+        doneToast(t, r.task);
       } catch (e) {
         if (e.status !== 409) throw e;
-        action.setNotice(`${t.title} was already done.`);
+        alreadyDone(t);
       }
       await list.reload();
     }, `done:${t.id}`),
     snooze: (t, until) => action.run(async () => {
       try {
         const r = await post(`tasks/${t.id}/snooze`, {done_by:me, source:'web', occurrence:t.occurrence, ...(until ? {until} : {})});
-        action.setNotice(`Snoozed ${t.title} until ${r.task.due_text}.`);
+        toast(`Snoozed: ${t.title}`, `Until ${r.task.due_text}.`);
       } catch (e) {
         if (e.status !== 409) throw e;
-        action.setNotice(`${t.title} was already done.`);
+        alreadyDone(t);
       }
       await list.reload();
     }, `snooze:${t.id}`),
     alarm: (t, on) => action.run(async () => {
       const r = await patch(`tasks/${t.id}`, {alarm:on});
       const n = r.task;
-      action.setNotice(!on ? `Alarm off: ${t.title}.`
-        : n.eff_due ? `Alarm on: ${t.title}. It pushes ${n.alarm_at ? `at ${n.alarm_at}` : 'with the evening feed-the-dogs announcement (8:30 PM if that doesn’t play)'} every day from ${n.due_text} until it’s done.`
-        : `Alarm on: ${t.title}. It starts once the task has a due date.`);
+      toast(`Alarm ${on ? 'on' : 'off'}: ${t.title}`, !on ? undefined
+        : n.eff_due ? `It pushes ${n.alarm_at ? `at ${n.alarm_at}` : 'with the evening feed-the-dogs announcement (8:30 PM if that doesn’t play)'} every day from ${n.due_text} until it’s done.`
+        : 'It starts once the task has a due date.');
       await list.reload();
     }, `alarm:${t.id}`),
     change: (t, body, quiet) => action.run(async () => {
       await patch(`tasks/${t.id}`, body);
-      if (!quiet) action.setNotice(`Updated ${t.title}.`);
+      if (!quiet) toast(`Updated: ${t.title}`);
       await list.reload();
     }, `change:${t.id}`),
+    // the plus at the top of a board column: the column's priority, Inbox, and on
+    // this tab a schedule read from the words (else every week)
+    add: async (col, title, position) => {
+      try {
+        const r = await post('tasks', {title, category:'Inbox', priority:PRIORITY_WORD[col], position, source:'web', added_by:me,
+          ...(recurring ? {read_schedule:true, schedule:{kind:'interval', interval_n:1, interval_unit:'weeks'}} : {})});
+        const n = r.task;
+        addedToast(n, n.repeats ? `${n.schedule_text}. Next one ${n.due_text}.`
+          : !inPeriod(n, period) ? 'It has no date yet, so it shows under All.' : undefined);
+      } catch (e) {
+        toast('Couldn’t add that task', e.message, {tone:'error'});
+        throw e;
+      }
+      await list.reload();
+    },
   };
 
   const overdue = tasks.filter(t => t.state === 'overdue').length;
@@ -117,14 +136,19 @@ export function TasksPage({kind, boot, me}) {
       <span className="tasks-muted tasks-toolbar-count">{tasks.length} open</span>
     </div>
     {action.error && <Alert tone="error">{action.error}</Alert>}
-    {action.notice && <Alert tone="success">{action.notice}</Alert>}
     {list.error && <Alert tone="error">{list.error}</Alert>}
     {list.loading && !list.data && <Pending>Loading tasks…</Pending>}
-    {list.data && !tasks.length && <EmptyState title="Nothing here" description={recurring ? 'No recurring tasks yet. Add one, or tell the Telegram bot something like “water the plants every Saturday”.' : 'No open tasks. Add one, or send it to the Telegram bot.'}/>}
-    {list.data && !!tasks.length && !inView.length && <EmptyState title="Nothing due in this period" description="Choose All to see everything."/>}
-    {list.data && !!inView.length && (view === 'board'
-      ? <TaskBoard tasks={inView} recurring={recurring} ops={ops} action={action}/>
-      : <TaskTable tasks={inView} recurring={recurring} boot={boot} ops={ops} action={action} refreshing={list.loading}/>)}
+    {/* the board always shows, so its plus buttons can add the first task */}
+    {list.data && view === 'board' && <>
+      {!tasks.length && <p className="tasks-muted tasks-board-note">{recurring ? 'No recurring tasks yet. Add one with a plus, or tell the Telegram bot something like “water the plants every Saturday”.' : 'No open tasks. Add one with a plus, or send it to the Telegram bot.'}</p>}
+      {!!tasks.length && !inView.length && <p className="tasks-muted tasks-board-note">Nothing due in this period. Choose All to see everything.</p>}
+      <TaskBoard tasks={inView} recurring={recurring} ops={ops} action={action}/>
+    </>}
+    {list.data && view === 'table' && <>
+      {!tasks.length && <EmptyState title="Nothing here" description={recurring ? 'No recurring tasks yet. Add one, or tell the Telegram bot something like “water the plants every Saturday”.' : 'No open tasks. Add one, or send it to the Telegram bot.'}/>}
+      {!!tasks.length && !inView.length && <EmptyState title="Nothing due in this period" description="Choose All to see everything."/>}
+      {!!inView.length && <TaskTable tasks={inView} recurring={recurring} boot={boot} ops={ops} action={action} refreshing={list.loading}/>}
+    </>}
   </div>;
 }
 

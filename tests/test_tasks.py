@@ -382,5 +382,81 @@ class Api(Base):
             self.assertTrue(all(r["status"] in ("dry-run", "empty") for r in ran["results"]))
 
 
+
+class Undo(Base):
+    """Done and skip can be taken back from the web toast; add and archive undo
+    through the usual archive and status calls."""
+    def test_undo_recurring_done_puts_the_date_and_history_back(self):
+        t = self.tasks.create({"title": "Filter", "due": "2026-10-17",
+                               "schedule": {"kind": "interval", "interval_n": 30, "interval_unit": "days"}})
+        before = self.tasks.get(t["id"])
+        done = self.tasks.complete(t["id"], "Alex", "web", occurrence=t["occurrence"])
+        self.assertEqual(done["eff_due"], "2026-11-18")
+        back = self.tasks.undo(t["id"], done["completion_id"])
+        for k in ("eff_due", "occurrence", "state", "last_done_at", "status", "cursor"):
+            self.assertEqual(back[k], before[k], k)
+        self.assertEqual(self.tasks.completions(t["id"]), [])
+        self.assertIn(("undone", t["id"]), self.events)
+        with self.assertRaises(TaskError) as e:   # once only
+            self.tasks.undo(t["id"], done["completion_id"])
+        self.assertEqual(e.exception.status, 409)
+
+    def test_undo_one_off_done_reopens_it(self):
+        t = self.tasks.create({"title": "Return parcel", "due": "2026-10-19"})
+        done = self.tasks.complete(t["id"], "Sam", "web")
+        self.assertEqual(done["status"], "done")
+        back = self.tasks.undo(t["id"], done["completion_id"])
+        self.assertEqual((back["status"], back["eff_due"], back["last_done_at"]), ("open", "2026-10-19", None))
+
+    def test_undo_refuses_when_not_newest_or_changed_since(self):
+        t = self.tasks.create({"title": "Sweep", "schedule": {"kind": "rrule", "rrule": "FREQ=DAILY"}, "due": "2026-10-19"})
+        first = self.tasks.complete(t["id"], "Alex", "web")
+        self.clock.when += timedelta(seconds=5)
+        second = self.tasks.complete(t["id"], "Alex", "web")
+        with self.assertRaises(TaskError):
+            self.tasks.undo(t["id"], first["completion_id"])
+        self.clock.when += timedelta(seconds=5)
+        self.tasks.patch(t["id"], {"title": "Sweep the hall"})
+        with self.assertRaises(TaskError):
+            self.tasks.undo(t["id"], second["completion_id"])
+
+    def test_archive_undo_restores_a_finished_task_as_done(self):
+        t = self.tasks.create({"title": "Book trip"})
+        self.tasks.complete(t["id"], "Alex", "web")
+        self.tasks.archive(t["id"])
+        self.assertEqual(self.tasks.patch(t["id"], {"status": "done"})["status"], "done")
+        with self.assertRaises(TaskError):   # done is only a way back from archived
+            self.tasks.patch(t["id"], {"status": "done"})
+
+    def test_switch_comes_back_on_only_if_the_alarm_had_turned_it_on(self):
+        from app.scheduler import Scheduler
+        s = Scheduler(self.cfg, self.store, self.tasks, Shopping(self.store, self.clock), None, None)
+        t = self.tasks.create({"title": "Meds", "priority": "critical", "due": "2026-10-19", "source": "seed:dog_meds",
+                               "schedule": {"kind": "interval", "interval_n": 30, "interval_unit": "days"}})
+        done = self.tasks.complete(t["id"], "Alex", "web")
+        back = self.tasks.undo(t["id"], done["completion_id"])
+        asyncio.run(s._after_undo(back))
+        self.assertFalse(s.sent(t["id"], "switch_on_undo", self.clock().isoformat(timespec="minutes"), "dry-ha_switch"))
+        s.record(t["id"], "switch_on", "2026-10-19", "ha_switch", True)
+        asyncio.run(s._after_undo(back))
+        self.assertTrue(s.sent(t["id"], "switch_on_undo", self.clock().isoformat(timespec="minutes"), "dry-ha_switch"))
+
+
+class QuickAdd(Base):
+    def test_schedule_is_read_from_the_title(self):
+        t = self.tasks.create({"title": "Water the plants every Saturday", "read_schedule": True,
+                               "schedule": {"kind": "interval", "interval_n": 1, "interval_unit": "weeks"}})
+        self.assertEqual((t["title"], t["schedule"]["rrule"]), ("Water the plants", "FREQ=WEEKLY;BYDAY=SA"))
+        t = self.tasks.create({"title": "Check the smoke alarms", "read_schedule": True,
+                               "schedule": {"kind": "interval", "interval_n": 1, "interval_unit": "weeks"}})
+        self.assertEqual((t["title"], t["schedule"]["kind"], t["schedule"]["interval_unit"]),
+                         ("Check the smoke alarms", "interval", "weeks"))   # the fallback stands
+
+    def test_position_places_it_in_its_column(self):
+        a = self.tasks.create({"title": "A"})
+        b = self.tasks.create({"title": "B", "position": a["position"] - 1024})
+        self.assertLess(b["position"], a["position"])
+
+
 if __name__ == "__main__":
     unittest.main()

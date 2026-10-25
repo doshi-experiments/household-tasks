@@ -1,11 +1,12 @@
 import React, {useState} from 'react';
-import {Alert, Badge, Button, EmptyState, PageHeader, Select} from '@doshi-experiments/design-system/react';
+import {Alert, Badge, Button, PageHeader, Select, toast} from '@doshi-experiments/design-system/react';
 import {patch, post} from './api';
-import {useAction, useResource} from './hooks';
+import {useAction, useOnChange, useResource} from './hooks';
 import {Pending} from './pending';
 import {Board} from './board';
 import {PRIORITY_TONE, dueText} from './tasks';
 import {celebrate} from './celebrate';
+import {addedToast, doneToast} from './undo';
 
 export const STAGES = [['idea', 'Ideas'], ['next', 'Next up'], ['doing', 'Doing'], ['done', 'Done']];
 const DONE_DAYS = 14;
@@ -36,34 +37,46 @@ export function HomelabPage({boot, me}) {
   const shown = project ? tasks.filter(t => t.category === project) : tasks;
   const open = tasks.filter(t => t.status === 'open');
   const count = name => open.filter(t => t.category === name).length;
+  useOnChange(list.reload);
 
   const ops = {
     done: (t, event) => action.run(async () => {
       try {
-        await post(`tasks/${t.id}/complete`, {done_by:me, source:'web'});
+        const r = await post(`tasks/${t.id}/complete`, {done_by:me, source:'web'});
         celebrate(event);
-        action.setNotice(`Done: ${t.title}.`);
+        doneToast(t, r.task);
       } catch (e) {
         if (e.status !== 409) throw e;
-        action.setNotice(`${t.title} was already done.`);
+        toast(`${t.title} was already done.`, undefined, {tone:'info'});
       }
       await list.reload();
     }, `done:${t.id}`),
     move: (t, stage, position) => action.run(async () => {
       if (stage === 'done') {
         if (t.status !== 'done') {
-          await post(`tasks/${t.id}/complete`, {done_by:me, source:'web'});
+          const r = await post(`tasks/${t.id}/complete`, {done_by:me, source:'web'});
           celebrate();
-          action.setNotice(`Done: ${t.title}.`);
+          doneToast(t, r.task);
         }
       } else if (t.status === 'done') {
         await patch(`tasks/${t.id}`, {status:'open', stage, position});
-        action.setNotice(`Reopened ${t.title}.`);
+        toast(`Reopened: ${t.title}`);
       } else {
         await patch(`tasks/${t.id}`, {stage, position});
       }
       await list.reload();
     }, `move:${t.id}`),
+    // the plus at the top of a column: that stage, Low, in the project being shown
+    add: async (stage, title, position) => {
+      try {
+        const r = await post('tasks', {title, category:project || 'New projects', priority:'low', stage, position, source:'web', added_by:me});
+        addedToast(r.task, project ? undefined : `In ${r.task.category}.`);
+      } catch (e) {
+        toast('Couldn’t add that task', e.message, {tone:'error'});
+        throw e;
+      }
+      await list.reload();
+    },
   };
 
   return <div className="tasks-stack">
@@ -76,13 +89,11 @@ export function HomelabPage({boot, me}) {
       <span className="tasks-muted tasks-toolbar-count">{open.length} open · done in the last {DONE_DAYS} days shown</span>
     </div>
     {action.error && <Alert tone="error">{action.error}</Alert>}
-    {action.notice && <Alert tone="success">{action.notice}</Alert>}
     {list.error && <Alert tone="error">{list.error}</Alert>}
     {list.loading && !list.data && <Pending>Loading homelab tasks…</Pending>}
-    {list.data && !tasks.length && <EmptyState title="Nothing here yet"
-      description="Add one, or tell the Telegram bot something like “idea: a dashboard that shows the backups”."/>}
-    {list.data && !!tasks.length && <Board className="tasks-board-stages" tasks={shown} columns={STAGES}
-      columnOf={stageOf} order={order} onMove={ops.move}
+    {list.data && !tasks.length && <p className="tasks-muted tasks-board-note">Nothing here yet. Add one with a plus, or tell the Telegram bot something like “idea: a dashboard that shows the backups”.</p>}
+    {list.data && <Board className="tasks-board-stages" tasks={shown} columns={STAGES}
+      columnOf={stageOf} order={order} onMove={ops.move} onAdd={ops.add} canAdd={stage => stage !== 'done'} placeholder="New task"
       renderCard={(t, {handle, overlay}) => <LabCard task={t} handle={handle} overlay={overlay} ops={ops} action={action}/>}/>}
   </div>;
 }

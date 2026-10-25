@@ -1,4 +1,4 @@
-/* Household tasks on Felt (design system 0.8.0). Shared components bring the
+/* Household tasks on Felt (design system 0.9.0). Shared components bring the
    controls, pickers, menus, toggles, toasts and surfaces; this file is layout plus
    the few pieces the system doesn't have yet (board, celebration). Tokens only. */
 * {box-sizing:border-box}
@@ -99,6 +99,16 @@ a.ds-button {text-decoration:none; display:inline-flex; align-items:center; just
 .tasks-snoozed {display:block; font-size:.8125rem; font-weight:400; color:var(--ds-text-secondary)}
 .tasks-card-actions {display:flex; align-items:center; justify-content:flex-end; gap:6px; position:relative; z-index:1}
 .tasks-card-actions > .tasks-alarm {margin-right:auto}
+.tasks-board-note {margin:0}
+
+/* Quick add: an empty stitched slot with a plus at the top of a column. It turns
+   into a card being written, raised so its pressed-in field isn't recessed twice. */
+.tasks-quick-plus {display:grid; place-items:center; width:100%; min-height:44px; margin:0 0 12px; padding:0; border:1.5px dashed var(--ds-stitch); border-radius:var(--ds-radius-control); background:transparent; color:var(--ds-text-secondary); cursor:pointer; transition:background var(--ds-duration-fast), color var(--ds-duration-fast)}
+.tasks-quick-plus:hover {background:var(--ds-selection); color:var(--ds-text)}
+.tasks-quick-plus:focus-visible {outline:3px solid var(--ds-focus); outline-offset:2px}
+.tasks-quick-field {display:grid; gap:4px; margin:0 0 12px; padding:10px; border-radius:18px; background:var(--ds-surface-raised); box-shadow:var(--ds-shadow-raised)}
+.tasks-quick-field .ds-text-input {width:100%; min-height:44px}
+.tasks-quick-hint {margin:0 4px; font-size:.75rem; color:var(--ds-text-secondary)}
 
 /* Homelab: four progress columns; finished cards step back. */
 .tasks-board.tasks-board-stages {grid-template-columns:repeat(4,minmax(0,1fr)); gap:16px}

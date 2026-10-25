@@ -6,6 +6,7 @@ clear phone notifications, flip HA switches and so on.
 """
 from __future__ import annotations
 
+import json
 import re
 from datetime import date, datetime, timedelta
 from typing import Callable
@@ -20,6 +21,8 @@ ALARM_WORDS = {"critical", "urgent", "p0", "alarm"}
 PRIORITY_LABELS = {1: "High", 2: "Medium", 3: "Low"}
 SCHEDULE_FIELDS = ("schedule_kind", "rrule", "anchor_date", "interval_n", "interval_unit", "flex", "due_time")
 EDITABLE = ("title", "notes", "category", "priority", "assignee", "source", "added_by")
+# The task columns a done or skip can change, which undo puts back.
+UNDO_FIELDS = ("status", "cursor", "nominal_due", "due", "anchor_date", "snoozed_until", "last_done_at")
 # Homelab tasks move through these stages on their board; done is the task's status.
 STAGES = ("idea", "next", "doing")
 
@@ -228,6 +231,12 @@ class Tasks:
     # ------------------------------------------------------------ writes
     def create(self, body: dict) -> dict:
         title = str(body.get("title") or "").strip()
+        if body.get("read_schedule"):
+            # quick add: "water the plants every Saturday" carries its own schedule;
+            # without one, the body's schedule (if any) stands
+            title, found = sch.split_phrase(title)
+            if found:
+                body = {**body, "schedule": {**(body.get("schedule") or {}), **found}}
         if not title:
             raise TaskError(400, "A task needs a title.")
         priority, alarm = parse_priority(body.get("priority"))
@@ -242,15 +251,22 @@ class Tasks:
             f["due_time"] = None
         nominal, due = self._derive(f, None)
         now = self.now().isoformat(timespec="seconds")
+        position = None
+        if body.get("position") is not None:
+            try:
+                position = float(body["position"])
+            except (TypeError, ValueError):
+                raise TaskError(400, "position must be a number.") from None
         with self.store.tx() as db:
-            # new tasks go to the bottom of their column on the board
-            top = db.execute("SELECT coalesce(max(position), 0) FROM tasks").fetchone()[0]
+            # new tasks go to the bottom of their column on the board, unless placed
+            if position is None:
+                position = db.execute("SELECT coalesce(max(position), 0) FROM tasks").fetchone()[0] + 1024.0
             cur = db.execute(
                 "INSERT INTO tasks(title, notes, category, area, stage, priority, alarm, position, assignee, schedule_kind,"
                 " rrule, anchor_date, interval_n, interval_unit, flex, due_time, nominal_due, due, source, added_by,"
                 " created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (title[:300], str(body.get("notes") or ""), category, area, stage, priority,
-                 int(alarm), top + 1024.0,
+                 int(alarm), position,
                  self._assignee(body.get("assignee")), f["schedule_kind"], f["rrule"], f["anchor_date"],
                  f["interval_n"], f["interval_unit"], f["flex"], f["due_time"], nominal, due,
                  str(body.get("source") or ""), str(body.get("added_by") or ""), now, now))
@@ -295,7 +311,8 @@ class Tasks:
             if k in body:
                 updates[k] = str(body[k] or "")
         if "status" in body:
-            if body["status"] not in ("open", "archived"):
+            # done only as the undo of archiving a finished task; finishing goes through complete
+            if body["status"] not in ("open", "archived") and not (body["status"] == "done" and row["status"] == "archived"):
                 raise TaskError(400, "Status can be set to open or archived.")
             updates["status"] = body["status"]
         if "snoozed_until" in body:
@@ -364,14 +381,18 @@ class Tasks:
                 updates.update(cursor=_iso(cursor), nominal_due=nominal, due=due)
                 if nominal is None:
                     updates["status"] = "done"   # a rule with an end has run out
+            # what undo puts back, and the updated_at that shows nothing changed since
+            before = {k: row[k] for k in UNDO_FIELDS if k in updates}
+            before["after"] = updates["updated_at"]
             with self.store.tx() as db:
-                db.execute("INSERT INTO completions(task_id, kind, done_at, nominal_due, done_by, source, note)"
-                           " VALUES (?,?,?,?,?,?,?)",
-                           (task_id, kind, when.isoformat(timespec="seconds"), row["nominal_due"],
-                            str(done_by or ""), str(source or ""), str(note or "")))
+                cur = db.execute("INSERT INTO completions(task_id, kind, done_at, nominal_due, done_by, source, note, undo)"
+                                 " VALUES (?,?,?,?,?,?,?,?)",
+                                 (task_id, kind, when.isoformat(timespec="seconds"), row["nominal_due"],
+                                  str(done_by or ""), str(source or ""), str(note or ""), json.dumps(before)))
                 db.execute(f"UPDATE tasks SET {', '.join(f'{k}=?' for k in updates)} WHERE id=?",
                            (*updates.values(), task_id))
         task = self.get(task_id)
+        task["completion_id"] = cur.lastrowid
         task["previous"] = {"nominal_due": prev["nominal_due"], "occurrence": occurrence_key(prev)}
         task["closed"] = task["status"] != "open"
         self._emit("completed" if kind == "done" else "skipped", task)
@@ -382,6 +403,27 @@ class Tasks:
 
     def skip(self, task_id: int, done_by="", source="", occurrence=None, note="") -> dict:
         return self._close(task_id, "skip", done_by, source, occurrence, None, note)
+
+    def undo(self, task_id: int, completion_id: int) -> dict:
+        """Take back a done or skip: the task returns to how it was and the history
+        row goes. Only the task's newest one, and only while nothing has changed it since."""
+        with self.store.lock:
+            row = self._row(task_id)
+            c = self.store.one("SELECT * FROM completions WHERE id=? AND task_id=?", (completion_id, task_id))
+            newest = self.store.one("SELECT max(id) AS id FROM completions WHERE task_id=?", (task_id,))
+            if not c or not c["undo"] or newest["id"] != c["id"]:
+                raise TaskError(409, "That can’t be undone any more.", self.serialize(row))
+            before = json.loads(c["undo"])
+            if row["updated_at"] != before.pop("after"):
+                raise TaskError(409, "It has changed since, so it can’t be undone.", self.serialize(row))
+            before["updated_at"] = self.now().isoformat(timespec="seconds")
+            with self.store.tx() as db:
+                db.execute("DELETE FROM completions WHERE id=?", (completion_id,))
+                db.execute(f"UPDATE tasks SET {', '.join(f'{k}=?' for k in before)} WHERE id=?",
+                           (*before.values(), task_id))
+        task = self.get(task_id)
+        self._emit("undone", task)
+        return task
 
     def snooze(self, task_id: int, until=None, days=None, occurrence=None, done_by="", source="") -> dict:
         with self.store.lock:

@@ -57,7 +57,8 @@ CREATE TABLE IF NOT EXISTS completions (
   nominal_due TEXT,
   done_by TEXT NOT NULL DEFAULT '',
   source TEXT NOT NULL DEFAULT '',
-  note TEXT NOT NULL DEFAULT '');
+  note TEXT NOT NULL DEFAULT '',
+  undo TEXT NOT NULL DEFAULT '');
 CREATE INDEX IF NOT EXISTS idx_completions_task ON completions(task_id, done_at);
 CREATE TABLE IF NOT EXISTS notifications (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -120,10 +121,15 @@ class Store:
         """2026-10-19: priorities are High/Medium/Low (1-3) plus an alarm flag
         (the old P0 = High + alarm), and the board keeps a manual order.
         2026-10-19: tasks belong to an area (household, or homelab with a
-        progress stage); a category's area decides its tasks' area."""
+        progress stage); a category's area decides its tasks' area.
+        2026-10-24: a completion keeps the task fields it changed (JSON), so the
+        newest done or skip can be undone."""
         cols = {r[1] for r in self.db.execute("PRAGMA table_info(tasks)")}
         cat_cols = {r[1] for r in self.db.execute("PRAGMA table_info(categories)")}
+        done_cols = {r[1] for r in self.db.execute("PRAGMA table_info(completions)")}
         with self.tx() as db:
+            if "undo" not in done_cols:
+                db.execute("ALTER TABLE completions ADD COLUMN undo TEXT NOT NULL DEFAULT ''")
             if "area" not in cat_cols:
                 db.execute("ALTER TABLE categories ADD COLUMN area TEXT NOT NULL DEFAULT 'household'")
             if "area" not in cols:

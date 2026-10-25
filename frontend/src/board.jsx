@@ -1,4 +1,4 @@
-import React, {useEffect, useMemo, useState} from 'react';
+import React, {useEffect, useId, useMemo, useRef, useState} from 'react';
 import {DndContext, DragOverlay, KeyboardSensor, PointerSensor, TouchSensor, closestCorners, useDroppable,
   useSensor, useSensors} from '@dnd-kit/core';
 import {SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy} from '@dnd-kit/sortable';
@@ -6,6 +6,7 @@ import {CSS} from '@dnd-kit/utilities';
 import {Button} from '@doshi-experiments/design-system/react';
 import {SnoozeButton} from './snooze';
 import {AlarmToggle, PRIORITIES, PRIORITY_WORD, dueText} from './tasks';
+import {useMedia} from './hooks';
 
 const COLUMN = id => `col-${id}`;
 
@@ -28,8 +29,10 @@ function columnKeys(event, args) {
 /** Columns of draggable cards. Drag a card (by its handle, or with the
     keyboard: focus the handle, Space, arrows, Space) to reorder it or move it
     to another column; onMove(task, column, position) saves it for everyone.
-    columns: [[id, label, ariaLabel]]; columnOf(task) -> id; order sorts a column. */
-export function Board({tasks, columns, columnOf, order, onMove, renderCard, className = ''}) {
+    columns: [[id, label, ariaLabel]]; columnOf(task) -> id; order sorts a column.
+    onAdd(column, title, position) adds a task at the top of a column from its
+    plus (a column canAdd(id) refuses gets none); a rejected promise keeps the text. */
+export function Board({tasks, columns, columnOf, order, onMove, renderCard, onAdd, canAdd = () => true, placeholder, className = ''}) {
   const byId = useMemo(() => Object.fromEntries(tasks.map(t => [t.id, t])), [tasks]);
   const group = () => {
     const cols = Object.fromEntries(columns.map(([id]) => [id, []]));
@@ -77,11 +80,17 @@ export function Board({tasks, columns, columnOf, order, onMove, renderCard, clas
   };
 
   const active = dragging ? byId[dragging] : null;
+  const addTo = col => {
+    if (!onAdd || !canAdd(col)) return null;
+    const top = byId[cols[col][0]]?.position;
+    return title => onAdd(col, title, top != null ? top - 1024 : undefined);
+  };
   return <DndContext sensors={sensors} collisionDetection={closestCorners} onDragStart={({active}) => setDragging(active.id)}
     onDragOver={onDragOver} onDragEnd={onDragEnd} onDragCancel={() => {setDragging(null); setCols(group());}}
     accessibility={{screenReaderInstructions:{draggable:'To move a task, press Space, use the arrow keys to move it, then press Space again to drop it or Escape to cancel.'}}}>
     <div className={`tasks-board ${className}`}>
-      {columns.map(([id, label, aria]) => <Column key={id} id={id} label={label} aria={aria || label} ids={cols[id]}>
+      {columns.map(([id, label, aria]) => <Column key={id} id={id} label={label} aria={aria || label} ids={cols[id]}
+        onAdd={addTo(id)} placeholder={placeholder}>
         {cols[id].map(tid => byId[tid] && <SortableCard key={tid} task={byId[tid]} renderCard={renderCard}/>)}
       </Column>)}
     </div>
@@ -89,23 +98,61 @@ export function Board({tasks, columns, columnOf, order, onMove, renderCard, clas
   </DndContext>;
 }
 
-/** High / Medium / Low columns for household tasks. */
+/** Low / Medium / High columns for household tasks; High comes first once
+    they stack (the 900px breakpoint in tasks.css). */
 export function TaskBoard({tasks, recurring, ops, action}) {
-  return <Board tasks={tasks} columns={PRIORITIES.map(([p, label]) => [String(p), label, `${label} priority`])}
+  const stacked = useMedia('(max-width: 900px)');
+  return <Board tasks={tasks} columns={(stacked ? [...PRIORITIES].reverse() : PRIORITIES).map(([p, label]) => [String(p), label, `${label} priority`])}
     columnOf={t => String(t.priority in {1:1, 2:1, 3:1} ? t.priority : 2)}
     order={(a, b) => (a.position ?? 0) - (b.position ?? 0)}
     onMove={(t, col, position) => ops.change(t, {priority:PRIORITY_WORD[col], position}, true)}
+    onAdd={ops.add} placeholder={recurring ? 'e.g. Water the plants every Saturday' : 'New task'}
     renderCard={(t, {handle, overlay}) => <Card task={t} recurring={recurring} ops={ops} action={action} handle={handle} overlay={overlay}/>}/>;
 }
 
-function Column({id, label, aria, ids, children}) {
+function Column({id, label, aria, ids, onAdd, placeholder, children}) {
   const {setNodeRef, isOver} = useDroppable({id:COLUMN(id)});
   return <section className={`tasks-column${isOver ? ' is-over' : ''}`} aria-label={aria}>
     <h2 className="tasks-column-head"><span>{label}</span><span className="tasks-muted">{ids.length}</span></h2>
+    {onAdd && <QuickAdd label={label} placeholder={placeholder} onAdd={onAdd}/>}
     <SortableContext id={COLUMN(id)} items={ids} strategy={verticalListSortingStrategy}>
       <ol ref={setNodeRef} className="tasks-column-list">{children}{!ids.length && <li className="tasks-column-empty">Drop a task here</li>}</ol>
     </SortableContext>
   </section>;
+}
+
+/** An empty slot with a plus that turns into a field in place: Enter adds the
+    task and leaves the field open for the next one; Esc, or leaving it empty,
+    closes it. */
+function QuickAdd({label, placeholder = 'New task', onAdd}) {
+  const [open, setOpen] = useState(false), [title, setTitle] = useState(''), [saving, setSaving] = useState(false);
+  const plus = useRef(null), input = useRef(null), refocus = useRef(false), hint = useId();
+  useEffect(() => {
+    if (open) input.current?.focus();
+    else if (refocus.current) {refocus.current = false; plus.current?.focus();}
+  }, [open]);
+  const close = () => {refocus.current = true; setTitle(''); setOpen(false);};
+  const save = async () => {
+    const text = title.trim();
+    if (!text || saving) return;
+    setSaving(true);
+    try {await onAdd(text); setTitle('');} catch {/* a toast says why; the text stays to try again */}
+    finally {setSaving(false); input.current?.focus();}
+  };
+  if (!open) return <button type="button" ref={plus} className="tasks-quick-plus" aria-label={`Add a task to ${label}`} title="Add a task"
+    onClick={() => setOpen(true)}>
+    <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M8 3v10M3 8h10" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/></svg>
+  </button>;
+  return <div className="tasks-quick-field">
+    <input ref={input} className="ds-text-input" aria-label={`New task in ${label}`} aria-describedby={hint} placeholder={placeholder}
+      value={title} onChange={e => setTitle(e.target.value)} enterKeyHint="done" aria-busy={saving || undefined}
+      onKeyDown={e => {
+        if (e.key === 'Enter' && !e.nativeEvent.isComposing) {e.preventDefault(); save();}
+        else if (e.key === 'Escape') {e.preventDefault(); close();}
+      }}
+      onBlur={() => {if (!title.trim() && !saving) setOpen(false);}}/>
+    <p id={hint} className="tasks-quick-hint">Enter to add · Esc to cancel</p>
+  </div>;
 }
 
 function SortableCard({task, renderCard}) {
