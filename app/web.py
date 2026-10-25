@@ -79,7 +79,11 @@ def create_app(cfg=None, store=None, clock=None, start_scheduler=True):
         response.headers["Cache-Control"] = "no-store" if path.startswith(("/api/", "/hooks/")) else "no-cache"
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "same-origin"
-        response.headers["X-Frame-Options"] = "DENY"
+        if cfg.frame_ancestors:
+            # Home Assistant's Webpage dashboard shows the app; no other site may frame it
+            response.headers["Content-Security-Policy"] = "frame-ancestors 'self' " + " ".join(cfg.frame_ancestors)
+        else:
+            response.headers["X-Frame-Options"] = "DENY"
         return response
 
     @app.exception_handler(TaskError)

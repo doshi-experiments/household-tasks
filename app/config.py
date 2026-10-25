@@ -7,6 +7,8 @@ from dataclasses import dataclass, field
 from zoneinfo import ZoneInfo
 
 HHMM = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+# a scheme and host, with an optional port: nothing that could end the CSP directive
+ORIGIN = re.compile(r"^https?://[A-Za-z0-9.-]+(:\d{1,5})?$")
 
 
 @dataclass(frozen=True)
@@ -46,6 +48,8 @@ class Config:
     p0_default_time: str = "17:30"
     p1_overdue_push: bool = True
     p1_overdue_push_time: str = "18:00"
+    # Origins allowed to show the app in a frame (Home Assistant's addresses); none = never framed.
+    frame_ancestors: tuple[str, ...] = ()
     calendar_days_ahead: int = 90
     log_level: str = "INFO"
 
@@ -106,6 +110,7 @@ def load() -> Config:
         p1_overdue_push=_bool(e("P1_OVERDUE_PUSH"), True),
         p1_overdue_push_time=e("P1_OVERDUE_PUSH_TIME", "18:00"),
         calendar_days_ahead=int(e("CALENDAR_DAYS_AHEAD", "90") or 90),
+        frame_ancestors=tuple(e("FRAME_ANCESTORS").replace(",", " ").split()),
         log_level=e("LOG_LEVEL", "INFO").upper(),
     )
     problems = []
@@ -118,6 +123,8 @@ def load() -> Config:
         problems.append("QUIET_START and QUIET_END must both be HH:MM (or both blank)")
     if cfg.spoken_fallback and not HHMM.match(cfg.spoken_fallback):
         problems.append("SPOKEN_FALLBACK must be HH:MM or blank")
+    if bad := [o for o in cfg.frame_ancestors if not ORIGIN.match(o)]:
+        problems.append(f"FRAME_ANCESTORS takes origins like http://host:8123, not {', '.join(bad)}")
     ZoneInfo(cfg.tz_name)
     if problems:
         raise SystemExit("Config problems: " + "; ".join(problems))

@@ -458,5 +458,31 @@ class QuickAdd(Base):
         self.assertLess(b["position"], a["position"])
 
 
+
+class Framing(Base):
+    """Only Home Assistant's own addresses may show the app in a frame."""
+    def headers(self, cfg):
+        from fastapi.testclient import TestClient
+        from app.web import create_app
+        with TestClient(create_app(cfg=cfg, store=self.store, clock=self.clock, start_scheduler=False)) as c:
+            return c.get("/api/health").headers
+
+    def test_never_framed_by_default(self):
+        h = self.headers(self.cfg)
+        self.assertEqual(h["x-frame-options"], "DENY")
+        self.assertNotIn("content-security-policy", h)
+
+    def test_listed_origins_may_frame_it(self):
+        h = self.headers(make_cfg(frame_ancestors=("http://ha.example:8123", "http://ha.example.test:8123")))
+        self.assertEqual(h["content-security-policy"], "frame-ancestors 'self' http://ha.example:8123 http://ha.example.test:8123")
+        self.assertNotIn("x-frame-options", h)
+
+    def test_origins_are_checked(self):
+        from app.config import ORIGIN
+        self.assertTrue(ORIGIN.match("http://ha.example:8123") and ORIGIN.match("https://ha.example.test"))
+        for bad in ("ha.example:8123", "http://ha.example:8123/path", "http://x; script-src *", "*"):
+            self.assertFalse(ORIGIN.match(bad), bad)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -66,6 +66,7 @@ Summaries go to the Telegram group (with Done buttons) and to each person's phon
 | Optional switch automation | An existing on/off helper doubles as a "done" switch for one alarm task | `ha/automations/` |
 | Steps appended to an evening reminder | It ends with whatever Tasks says to add | `ha/automations/` |
 | `script.tasks_announce` | Speaks a reminder (read exactly when an alarm is in it) | `ha/scripts/` |
+| **Tasks** dashboard (Webpage, sidebar, `/household-tasks`) on `/local/tasks.html` | The whole app inside HA: the switcher page sends it to Tasks on the LAN when HA was opened on a LAN address, otherwise over Tailscale | `ha/www/tasks.html` |
 
 These are templates with `<PLACEHOLDERS>`; `ha/README.md` lists them. The exact versions installed in this house, and the originals they replaced, live in `ha/local/` (kept out of git). The service uses its own non-admin HA user.
 
@@ -120,6 +121,7 @@ docker run --rm -v "$PWD:/w" -w /w node:24-slim sh -c "npm ci && npx vite build"
 | `DIGEST_MORNING`, `DIGEST_EVENING`, `P1_OVERDUE_PUSH(_TIME)`, `SPOKEN_FALLBACK` | Reminder times |
 | `P0_DEFAULT_TIME`, `DEFAULT_DUE_TIME` | Default due times (17:30) |
 | `QUIET_ENTITY`, `QUIET_START`, `QUIET_END` | Quiet = this HA switch on; the clock window is the fallback |
+| `FRAME_ANCESTORS` | Origins allowed to show the app in a frame, space-separated (`http://host:8123`): every address Home Assistant is opened at. Empty = never framed (`X-Frame-Options: DENY`) |
 | `HA_SWITCH_TASKS`, `HA_CALENDAR_ENTITY`, `UPCOMING_CALENDARS` | Dog Meds switch mirror; the calendar to refresh; calendars for "what's coming up" |
 
 ### Data and backups
@@ -144,6 +146,7 @@ compose.yaml, Dockerfile, requirements.txt
 
 ## Change log
 
+- **2026-10-24** — Tasks inside Home Assistant: a Webpage dashboard shows the whole app. `FRAME_ANCESTORS` lists the origins allowed to frame it (sent as `Content-Security-Policy: frame-ancestors`; without it, `X-Frame-Options: DENY` as before). HA serves a small switcher, `ha/www/tasks.html`, from its own address, so the dashboard opens Tasks on the LAN at home and over Tailscale away.
 - **2026-10-24** — Undo and quick add. Confirmations are toasts everywhere (design system 0.9.0 adds a toast action); Done, Added and Archived have Undo, backed by `POST /api/tasks/{id}/undo` and a new `completions.undo` column (the task fields a done or skip changed, migrated on start). Archive no longer asks first. Priorities read Low, Medium, High in columns, pickers and filters, with High first once the board stacks on a phone. Each board column has a **+** that becomes a field (Enter adds at the top and stays open, Esc cancels); on Recurring it reads the schedule from the words via `schedule.split_phrase`. An empty board still shows its columns so the first task can be added there.
 - **2026-10-19** — Design system 0.8.0: the pickers, toasts, snooze menu and alarm toggle now come from the design system (`Select`, `DateField`, `TimeField`, `ToastProvider`/`toast`, `MenuButton`, `ToggleButton` in its error tone). The app's `controls.jsx` and `toast.jsx` and their CSS are gone, along with a third of `tasks.css`. Picker fields are 44px, the same as text fields, and list options and calendar days are full 44px targets. The calendar in the snooze dialog's “Pick a date…” now opens over the dialog instead of behind it, and keyboard focus in a calendar stays within the allowed dates. Clear filters is a small ghost button.
 - **2026-10-19** — Design system 0.7.1: buttons and toggles use its new `size="small"` (36px to the eye, 44px tap area) instead of this app's CSS override, which is gone. Rule from now on: UI changes go into the design system first.

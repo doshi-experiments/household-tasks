@@ -1,0 +1,18 @@
+<!doctype html>
+<!-- The Tasks dashboard's switcher. Home Assistant serves it from config/www as
+     /local/tasks.html, so it opens on whichever address HA was reached at: on the
+     home network that's a LAN address, so it sends the frame to Tasks on the LAN;
+     any other way in (the tailnet) goes to Tasks over Tailscale. Fill in both URLs. -->
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tasks</title>
+<p style="font:16px/1.5 system-ui, sans-serif; padding:16px">Opening Tasks…</p>
+<script>
+  const TASKS_LAN = '<TASKS_LAN_URL>';           // e.g. http://<lan address>:8040/
+  const TASKS_TAILNET = '<TASKS_TAILNET_URL>';   // e.g. https://tasks.<your-tailnet>.ts.net/
+  const host = location.hostname;
+  const home = /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(host) || host.endsWith('.local');
+  location.replace((home ? TASKS_LAN : TASKS_TAILNET) + location.hash);
+</script>
+</html>
