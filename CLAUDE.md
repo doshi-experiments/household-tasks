@@ -27,7 +27,7 @@ The household's task and shopping service, running live as the Dockge stack `/op
 - **Never print `.env` values.** List keys with `cut -d= -f1 .env`. `.env`, `data/` and anything with `.bak` in its name stay out of git (`.gitignore`).
 - **Never send a notification to test something** (no `POST /api/admin/test-notify`, no forced `/api/admin/run` with `dry:false`, no completing or snoozing real tasks) without the user's go-ahead. Pushes are critical alerts on family phones and Telegram messages reach the whole family.
 - **Homelab never notifies.** `Tasks.open_tasks()` returns household tasks only, and every reminder, summary, spoken line, the calendar feed and `/api/summary` read from it. A new notifying path must start there too, never from `Tasks.list()`.
-- **Night mode is sacred.** Nothing may push or speak while HA's night-mode switch (`QUIET_ENTITY`) is on (`Scheduler.quiet`). Any new send path must go through `Scheduler.deliver` and a `_due_slot` check.
+- **Night mode is sacred.** Nothing may push or speak while HA's night-mode switch (`QUIET_ENTITY`) is on (`Scheduler.quiet`). Any new send path must go through `Scheduler.deliver` and a `_due_slot` check. The one approved exception (2026-10-26): a nagging task's escalation (`nag_push` once past `nag.escalate_at`) is a critical alert and goes out in night mode; its earlier repeats still wait.
 - **Try UI interactions on a scratch copy**, never the live data: back up `data/tasks.db` with the SQLite backup API, run a second container on another port with `DB_PATH` pointing at the copy and `NOTIFY_ENABLED=false HA_TOKEN= BOT_TOKEN= HA_SWITCH_TASKS=`, test there, then remove it.
 - **Keep the ledger names.** Scheduler job and `notifications.kind` names still say `p0_push` / `p1_overdue`; renaming them would let today's reminders send twice.
 - **Old priority words stay accepted.** The bot and HA may send `p0`–`p3` or `critical`; `parse_priority` maps them (`critical`/`p0` = High + alarm).
@@ -35,7 +35,7 @@ The household's task and shopping service, running live as the Dockge stack `/op
 ## Commands
 
 ```bash
-docker compose build tasks && docker run --rm --network none tasks-tasks python -m unittest discover tests   # 50 offline tests
+docker compose build tasks && docker run --rm --network none tasks-tasks python -m unittest discover tests   # 64 offline tests
 docker compose up -d --build tasks
 docker compose logs --since=30m tasks | grep -E 'sent|dry-run|failed|WARNING'
 T=$(grep ^TASKS_API_TOKEN= .env | cut -d= -f2-)
@@ -49,7 +49,7 @@ Visual checks: screenshots of the live pages with headless Chromium (a throwaway
 
 - **`app/schedule.py`**: pure date rules. Kinds `none`, `interval` (from last done), `rrule` (fixed). `parse_phrase` turns words into a schedule; `apply_flex` does weekend flex (Mon–Thu → Friday); occurrences are identified by `nominal_due`, the next one comes from `cursor`. Unit-tested in `tests/test_schedule.py`. Areas: a category is `household` or `homelab`, and a task takes its category's area; homelab tasks add a `stage` (idea, next, doing).
 - **`app/tasks.py`**: the task rows. Create, patch, complete, skip, snooze; `serialize` adds `state`, `eff_due`, `occurrence`, `schedule_text`. Listeners fire after commits (the scheduler uses them to clear pushes, flip the Dog Meds switch and refresh HA's calendar).
-- **`app/scheduler.py`**: one asyncio minute tick. Alarm pushes, High-overdue pushes, morning and evening summaries, the spoken fallback. Every send goes through `deliver` and the `notifications` ledger (unique per task, kind, day and channel).
+- **`app/scheduler.py`**: one asyncio minute tick. Alarm pushes, nagging repeats and escalations (`nag_push`, plus `roll_over` skipping a nagging task's missed day at midnight), High-overdue pushes, morning and evening summaries, the spoken fallback. Every send goes through `deliver` and the `notifications` ledger (unique per task, kind, day and channel).
 - **`app/web.py`**: FastAPI routes, auth middleware, hooks for HA, `/calendar.ics`, and the built SPA.
 - **`app/store.py`**: SQLite schema; `_migrate` applies schema changes on start. Add new migrations there, never by hand.
 - **`app/ha.py`, `app/bot.py`**: Home Assistant REST (notification hub script, speech, switches, calendars) and ingest-bot's `/tasks-message`.

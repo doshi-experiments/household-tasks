@@ -132,7 +132,9 @@ class Store:
         2026-10-25: one shopping list; Everything Else merges into Groceries
         (its items categorised Other) and items carry category, store and aisle.
         2026-10-26: a Telegram message keeps the buttons it still offers (JSON), so
-        a task closed elsewhere can be taken off it."""
+        a task closed elsewhere can be taken off it.
+        2026-10-26: a task can nag (repeat its reminder every N minutes on the day
+        it's due) and escalate (critical pushes to more people from a set time)."""
         cols = {r[1] for r in self.db.execute("PRAGMA table_info(tasks)")}
         tg_cols = {r[1] for r in self.db.execute("PRAGMA table_info(telegram_messages)")}
         cat_cols = {r[1] for r in self.db.execute("PRAGMA table_info(categories)")}
@@ -156,6 +158,11 @@ class Store:
                 rows = db.execute("SELECT id FROM tasks ORDER BY priority, coalesce(due, '9999'), lower(title)").fetchall()
                 for i, (tid,) in enumerate(rows, 1):
                     db.execute("UPDATE tasks SET position=? WHERE id=?", (i * 1024.0, tid))
+            if "nag_every" not in cols:
+                db.execute("ALTER TABLE tasks ADD COLUMN nag_every INTEGER")
+                db.execute("ALTER TABLE tasks ADD COLUMN escalate_at TEXT")
+                db.execute("ALTER TABLE tasks ADD COLUMN escalate_every INTEGER")
+                db.execute("ALTER TABLE tasks ADD COLUMN escalate_to TEXT NOT NULL DEFAULT ''")
             if "category" not in item_cols:
                 db.execute("ALTER TABLE items ADD COLUMN category TEXT NOT NULL DEFAULT 'Groceries'")
                 db.execute("ALTER TABLE items ADD COLUMN store TEXT NOT NULL DEFAULT 'Real Canadian Superstore'")

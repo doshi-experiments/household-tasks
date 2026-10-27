@@ -1,4 +1,4 @@
-"""The minute tick: alarm pushes, high-priority overdue pushes, digests, the spoken fallback.
+"""The minute tick: alarm pushes, nagging reminders, high-priority overdue pushes, digests, the spoken fallback.
 
 (Job and ledger names keep their original p0/p1 spelling so ledger rows stay continuous.)
 
@@ -39,6 +39,7 @@ class Scheduler:
         self._p0_lock = asyncio.Lock()   # the minute tick and the dog-alarm hook both run p0_push
         self._refresh_pending = False
         self.quiet_state: tuple[bool, datetime] | None = None   # (night mode on?, when read)
+        self._nag_texts: dict[tuple[int, str], str] = {}        # (task, slot) -> the line written for it
         tasks.listeners.append(self._on_change)
 
     # ------------------------------------------------------------ ledger
@@ -213,6 +214,88 @@ class Scheduler:
                                               lambda: self.ha.set_switch(entity, True), f"{entity} on", force, dry))
         return out
 
+    def nag_step(self, t: dict, now: datetime) -> tuple[bool, int, datetime, int] | None:
+        """Where a nagging task stands now: (escalated?, step, slot, minutes since due),
+        or None when it has nothing to say. Only the current slot is ever sent, so
+        slots missed in an outage are skipped rather than sent in a burst."""
+        n, due_time = t["nag"], t["schedule"]["due_time"]
+        if not n or not due_time or t["state"] != "due" or t["eff_due"] != now.date().isoformat():
+            return None
+        start = self._at(now, due_time)
+        if now < start:
+            return None
+        esc = self._at(now, n["escalate_at"]) if n["escalate_at"] else None
+        escalated = bool(esc and now >= esc)
+        base, every = (max(esc, start), n["escalate_every"]) if escalated else (start, n["every"])
+        step = int((now - base).total_seconds() // (every * 60)) if every else 0
+        slot = base + timedelta(minutes=(every or 0) * step)
+        return escalated, step, slot, int((slot - start).total_seconds() // 60)
+
+    async def _nag_text(self, t: dict, key: tuple[int, str], words: dict, dry: bool) -> str:
+        """The house persona's line for this slot (asked once), else the fixed one."""
+        if key in self._nag_texts:
+            return self._nag_texts[key]
+        text = words["fallback"]
+        if self.cfg.nag_text_script and self.ha and self.ha.enabled and not dry:
+            try:
+                text = await self.ha.write_text(self.cfg.nag_text_script, words["prompt"], words["fallback"])
+            except Exception as e:
+                log.warning("nag text for task=%s failed, using the fixed line: %s", t["id"], e)
+        if len(self._nag_texts) > 200:
+            self._nag_texts.clear()
+        self._nag_texts[key] = text
+        return text
+
+    async def nag_push(self, now: datetime, force=False, dry=None, only_task=None, to=None) -> list[dict]:
+        """Nagging tasks: from the due time, the assignee's phone and the Telegram group
+        every nag.every minutes, each line more passive-aggressive than the last; from
+        nag.escalate_at, a critical push to nag.escalate_to and the group every
+        nag.escalate_every minutes, until someone taps Done. Night mode holds the
+        repeats but not the escalation: that is a critical alert and goes anyway."""
+        out = []
+        dry = (not self.cfg.notify_enabled) if dry is None else dry
+        for t in self.tasks.open_tasks():
+            if only_task and t["id"] != only_task:
+                continue
+            where = self.nag_step(t, now)
+            if not where:
+                continue
+            escalated, step, slot, late = where
+            if not escalated and self.quiet(now) and not force:
+                continue
+            kind, bucket = ("escalate" if escalated else "nag"), slot.isoformat(timespec="minutes")
+            channels = (("push", "ha_push"), ("telegram", "telegram"))
+            if not force and all(self.sent(t["id"], f"{kind}_{k}", bucket, f"dry-{c}" if dry else c) for k, c in channels):
+                continue
+            ids = t["nag"]["escalate_to"] if escalated else ([t["assignee"]] if t["assignee"] else [p.id for p in self.cfg.people])
+            people = [p for p in map(self.cfg.person, ids) if p]
+            words = digest.nag(t, step, late, escalated, [p.name for p in people])
+            msg = await self._nag_text(t, (t["id"], f"{kind}:{bucket}"), words, dry)
+            send_to = to or [p.send_to for p in people] or self._target(t, self.cfg.digest_send_to)
+            level = "critical" if escalated else "time-sensitive"
+            occ = occurrence_key(t)
+            actions = [{"action": f"TASK_DONE_{t['id']}_{occ}", "title": "Done"}]
+            out.append(await self.deliver(t["id"], f"{kind}_push", bucket, "ha_push",
+                                          lambda: self.ha.notify(send_to, words["title"], msg, level, f"task-{t['id']}", actions),
+                                          f"{words['title']}: {msg} → {send_to}", force, dry))
+            out.append(await self.deliver(t["id"], f"{kind}_telegram", bucket, "telegram",
+                                          lambda: self._telegram(kind, bucket, words["title"], msg, self._buttons(t, snooze=False), [t["id"]]),
+                                          f"{words['title']}: {msg}", force, dry))
+        return out
+
+    def roll_over(self, now: datetime) -> list[dict]:
+        """A nagging task's day that ended without a Done is skipped, so the next day
+        starts again at its due time instead of nagging all night; History shows it
+        as missed."""
+        out = []
+        for t in self.tasks.open_tasks():
+            if t["nag"] and t["repeats"] and t["overdue"]:
+                done = self.tasks.skip(t["id"], done_by="Tasks", source="missed", occurrence=t["occurrence"],
+                                       note="Not done that day")
+                log.info("rolled over task=%s: %s missed, next %s", t["id"], t["nominal_due"], done["eff_due"])
+                out.append({"task_id": t["id"], "missed": t["nominal_due"], "next": done["eff_due"]})
+        return out
+
     async def p1_overdue(self, now: datetime, force=False, dry=None, only_task=None, to=None) -> list[dict]:
         if not self.cfg.p1_overdue_push and not force:
             return []
@@ -277,7 +360,9 @@ class Scheduler:
         now = now or self.tasks.now()
         self.last_tick = now.isoformat(timespec="seconds")
         await self.read_quiet(now)
-        for name, job in (("p0_push", lambda: self.p0_push(now)), ("p1_overdue", lambda: self.p1_overdue(now)),
+        for name, job in (("roll_over", lambda: asyncio.to_thread(self.roll_over, now)),
+                          ("p0_push", lambda: self.p0_push(now)), ("nag_push", lambda: self.nag_push(now)),
+                          ("p1_overdue", lambda: self.p1_overdue(now)),
                           ("digest_morning", lambda: self.digest_job(now, "morning")),
                           ("digest_evening", lambda: self.digest_job(now, "evening")),
                           ("spoken_fallback", lambda: self.spoken_fallback(now))):
@@ -299,6 +384,8 @@ class Scheduler:
             return await self.p0_push(now, force, dry, only_task, to)
         if job == "p1_overdue":
             return await self.p1_overdue(now, force, dry, only_task, to)
+        if job == "nag_push":
+            return await self.nag_push(now, force, dry, only_task, to)
         if job in ("digest_morning", "digest_evening"):
             return await self.digest_job(now, job.split("_")[1], force, dry, to)
         if job == "spoken_fallback":

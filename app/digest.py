@@ -80,7 +80,7 @@ def p0_push(t: dict, today: date) -> tuple[str, str]:
 
 
 CLOSED_VIA = {"web": "in the app", "ha_push": "from a phone notification", "switch": "with the switch",
-              "telegram": "in Telegram"}
+              "telegram": "in Telegram", "missed": "not done that day"}
 
 
 def closed_line(event: str, t: dict) -> str:
@@ -96,7 +96,7 @@ def closed_line(event: str, t: dict) -> str:
     else:
         head = f"🗄️ {t['title']} archived"
     by = t.get("closed_by") or ""
-    by = "" if by in ("switch", "phone") else by   # the hooks' stand-ins when no person is known
+    by = "" if by in ("switch", "phone", "Tasks") else by   # stand-ins (hooks, roll-over) when no person is known
     who = ", ".join(x for x in (by, CLOSED_VIA.get(t.get("closed_via") or "", "")) if x)
     return head + (f" — {who}" if who else "")
 
@@ -124,7 +124,8 @@ def p0_spoken(t: dict) -> str:
 def dog_alarm(tasks: list[dict], first_today: bool) -> dict:
     """What the feed-dogs reminder should append to its speech."""
     p0 = [t for t in tasks if t["alarm"] and t["state"] in ("due", "overdue")]
-    rest = [t for t in tasks if not t["alarm"] and t["state"] in ("due", "overdue")]
+    # a nagging task has its own reminders, so it isn't read out with the feeding
+    rest = [t for t in tasks if not t["alarm"] and not t["nag"] and t["state"] in ("due", "overdue")]
     parts = []
     if first_today and rest:
         today_titles = [t["title"] for t in rest if not t["overdue"]][:6]
@@ -155,3 +156,78 @@ def upcoming_text(days: list[dict]) -> str:
 def day_label(d: date, today: date) -> str:
     rel = sch.fmt_date(d, today)
     return rel.capitalize() if rel in ("today", "tomorrow") else rel
+
+
+# ------------------------------------------------------------ nagging
+# Each repeat of a nagging task's reminder is a step more passive-aggressive.
+# HA's house persona writes the line when it can (NAG_TEXT_SCRIPT); these are
+# what it is asked for, and the fixed lines used when it can't answer.
+NAG_TONES = [
+    "Warm and friendly: a light nudge.",
+    "Cheerful, with a hint of teasing.",
+    "Mildly passive-aggressive, like a polite office email that is 'just circling back'.",
+    "Openly passive-aggressive ('as per my last reminder'), with an audible sigh.",
+    "Exasperated and sarcastic, keeping score of how many reminders this has taken.",
+    "Theatrically disappointed, laying on the guilt.",
+]
+ESCALATION_TONES = [
+    "An official escalation: announce, smugly, that {others} {have} now been brought in, "
+    "and that everyone will hear about it every hour until it's done.",
+    "Full melodrama and maximum passive aggression, as if this were the greatest betrayal "
+    "in household history, while staying affectionate.",
+]
+NAG_FALLBACK = [
+    "Due now. Tap Done once it's done.",
+    "Friendly reminder: {title}. Still waiting on that Done.",
+    "Just circling back on {title}. No pressure. Some pressure.",
+    "As per my last reminder: {title}. The Done button is right there.",
+    "{title}, still. That's {elapsed}. The Done button misses you.",
+    "Not to be dramatic, but {title} has now been ignored for {elapsed}.",
+]
+ESCALATION_FALLBACK = [
+    "{title} still isn't done after {elapsed}, so {everyone} {have} been looped in. Whoever taps Done first wins.",
+    "{elapsed} of {title} not being done. {everyone}, this is your sign. Tap Done.",
+]
+
+
+def _names(names: list[str]) -> str:
+    return _spoken_list(names) or "everyone"
+
+
+def elapsed_text(minutes: int) -> str:
+    if minutes < 60:
+        return f"{minutes} minutes"
+    h, m = divmod(minutes, 60)
+    h += m >= 45
+    half = " and a half" if 15 <= m < 45 else ""
+    if h == 1:
+        return f"an hour{half}"
+    return f"{h}{half} hours"
+
+
+def nag(t: dict, step: int, minutes_late: int, escalated: bool, people: list[str]) -> dict:
+    """The reminder for one step of a nagging task: {title, fallback, prompt}.
+    step counts from 0 at the due time; escalated steps count from 0 again.
+    people: who gets this one (names)."""
+    who = t["assignee_name"] or "everyone"
+    others = [n for n in people if n != t["assignee_name"]]
+    fill = {"title": t["title"], "elapsed": elapsed_text(minutes_late), "everyone": _names(people),
+            "have": "has" if len(people) == 1 else "have"}
+    if escalated:
+        line = ESCALATION_FALLBACK[min(step, len(ESCALATION_FALLBACK) - 1)]
+        tone = ESCALATION_TONES[min(step, len(ESCALATION_TONES) - 1)].format(
+            others=_names(others), have="has" if len(others) == 1 else "have")
+        title = f"⚠️ {t['title']}"
+    else:
+        line = NAG_FALLBACK[min(step, len(NAG_FALLBACK) - 1)]
+        tone = NAG_TONES[min(step, len(NAG_TONES) - 1)]
+        title = t["title"]
+    fallback = line.format(**fill)
+    fallback = fallback[0].upper() + fallback[1:]
+    due_time = t["schedule"]["due_time"] or ""
+    late = f" It was due at {due_time}, {fill['elapsed']} ago." if minutes_late else f" It's due now ({due_time})."
+    prompt = (f"Write a phone notification reminding {who} to do this task: {t['title']}.{late}"
+              + (f" This goes to {_names(people)}." if escalated else "")
+              + f" Tone: {tone} Playful, never mean, no swearing, and don't invent details about the task."
+              " One or two short sentences, at most 35 words. Name the task and end by telling them to tap Done.")
+    return {"title": title, "fallback": fallback, "prompt": prompt}

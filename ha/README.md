@@ -16,4 +16,6 @@ Automations and scripts go in through Home Assistant's config API, for example `
 
 The calendar is a Remote Calendar integration pointed at `http://<TASKS_HOST>:8040/calendar.ics`, labelled for whatever your summaries read.
 
+**Nagging reminders' wording** (optional): set `NAG_TEXT_SCRIPT` to a script that takes `prompt` and `fallback_text` and returns `{text: ...}` as its response (`stop` with `response_variable`). The service calls it once per reminder with `?return_response` and waits up to 60 s, then uses its own fixed line. Without it, the fixed lines are used.
+
 `local/` (not in git) holds the exact versions installed in this house, plus the originals they replaced, for rollback.

@@ -25,6 +25,11 @@ EDITABLE = ("title", "notes", "category", "priority", "assignee", "source", "add
 UNDO_FIELDS = ("status", "cursor", "nominal_due", "due", "anchor_date", "snoozed_until", "last_done_at")
 # Homelab tasks move through these stages on their board; done is the task's status.
 STAGES = ("idea", "next", "doing")
+# A nagging task: its reminder repeats every nag_every minutes from its due time on
+# the day it's due, and from escalate_at it's a critical push to escalate_to every
+# escalate_every minutes. A day it's never done is skipped at midnight.
+NAG_FIELDS = ("nag_every", "escalate_at", "escalate_every", "escalate_to")
+HHMM = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 
 
 class TaskError(Exception):
@@ -120,6 +125,7 @@ class Tasks:
                                    "snoozed_until", "last_done_at", "status", "source", "added_by", "created_at",
                                    "updated_at", "cursor", "position", "area", "stage")},
             "alarm": bool(row["alarm"]),
+            "nag": self._nag_out(row),
             # a time of its own (not the 17:30 default), else None: alarms then go out with the
             # evening feeding announcement, and only own-time tasks are on the reminders feed
             "own_time": own,
@@ -219,6 +225,53 @@ class Tasks:
             raise TaskError(400, "Stage is idea, next or doing.")
         return v
 
+    @staticmethod
+    def _nag_out(row: dict) -> dict | None:
+        if not (row["nag_every"] or row["escalate_at"]):
+            return None
+        return {"every": row["nag_every"], "escalate_at": row["escalate_at"],
+                "escalate_every": row["escalate_every"],
+                "escalate_to": [p for p in (row["escalate_to"] or "").split(",") if p]}
+
+    def _nag_fields(self, value) -> dict:
+        """{every, escalate_at, escalate_every, escalate_to} -> the task's nag columns;
+        None or {} turns nagging off."""
+        if not value:
+            return dict.fromkeys(NAG_FIELDS) | {"escalate_to": ""}
+        if not isinstance(value, dict):
+            raise TaskError(400, "nag is {every, escalate_at, escalate_every, escalate_to}.")
+
+        def minutes(k):
+            v = value.get(k)
+            if v in (None, "", 0):
+                return None
+            try:
+                n = int(v)
+            except (TypeError, ValueError):
+                raise TaskError(400, f"nag.{k} is a number of minutes.") from None
+            if not 5 <= n <= 1440:
+                raise TaskError(400, f"nag.{k} is between 5 and 1440 minutes.")
+            return n
+
+        at = value.get("escalate_at") or None
+        if at and not HHMM.match(str(at)):
+            raise TaskError(400, "nag.escalate_at is HH:MM.")
+        to = value.get("escalate_to") or []
+        if isinstance(to, str):
+            to = to.split(",")
+        people = []
+        for p in to:
+            pid = self._assignee(p)
+            if pid and pid not in people:
+                people.append(pid)
+        if at and not people:
+            raise TaskError(400, "nag.escalate_to names who gets the escalation.")
+        f = {"nag_every": minutes("every"), "escalate_at": at, "escalate_every": minutes("escalate_every") if at else None,
+             "escalate_to": ",".join(people) if at else ""}
+        if not (f["nag_every"] or f["escalate_at"]):
+            raise TaskError(400, "nag needs every and/or escalate_at.")
+        return f
+
     def _assignee(self, value) -> str | None:
         if value in (None, "", "none", "everyone"):
             return None
@@ -250,6 +303,7 @@ class Tasks:
         if area == "homelab" and not (body.get("schedule") or {}).get("due_time"):
             f["due_time"] = None
         nominal, due = self._derive(f, None)
+        nag = self._nag_fields(None if area == "homelab" else body.get("nag"))
         now = self.now().isoformat(timespec="seconds")
         position = None
         if body.get("position") is not None:
@@ -264,12 +318,14 @@ class Tasks:
             cur = db.execute(
                 "INSERT INTO tasks(title, notes, category, area, stage, priority, alarm, position, assignee, schedule_kind,"
                 " rrule, anchor_date, interval_n, interval_unit, flex, due_time, nominal_due, due, source, added_by,"
-                " created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                " nag_every, escalate_at, escalate_every, escalate_to,"
+                " created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (title[:300], str(body.get("notes") or ""), category, area, stage, priority,
                  int(alarm), position,
                  self._assignee(body.get("assignee")), f["schedule_kind"], f["rrule"], f["anchor_date"],
                  f["interval_n"], f["interval_unit"], f["flex"], f["due_time"], nominal, due,
-                 str(body.get("source") or ""), str(body.get("added_by") or ""), now, now))
+                 str(body.get("source") or ""), str(body.get("added_by") or ""),
+                 *(nag[k] for k in NAG_FIELDS), now, now))
             task_id = cur.lastrowid
         task = self.get(task_id)
         self._emit("created", task)
@@ -317,8 +373,12 @@ class Tasks:
             updates["status"] = body["status"]
         if "snoozed_until" in body:
             updates["snoozed_until"] = _iso(_d(body["snoozed_until"]))
+        if "nag" in body:
+            updates.update(self._nag_fields(body["nag"]))
         if area == "homelab" and (row["alarm"] or updates.get("alarm")):
             updates["alarm"] = 0
+        if area == "homelab" and (row["nag_every"] or row["escalate_at"] or updates.get("nag_every") or updates.get("escalate_at")):
+            updates.update(self._nag_fields(None))
         alarm = bool(updates.get("alarm", row["alarm"]))
         if any(k in body for k in ("schedule", "repeat", "due")) or (updates.get("alarm") and not row["alarm"]):
             f = self._schedule_fields(body, row, alarm)

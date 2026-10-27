@@ -51,6 +51,9 @@ class Config:
     # Origins allowed to show the app in a frame (Home Assistant's addresses); none = never framed.
     frame_ancestors: tuple[str, ...] = ()
     calendar_days_ahead: int = 90
+    # An HA script that writes a nagging reminder in the house's voice: it takes
+    # prompt and fallback_text and returns {text}. Blank = the fixed lines.
+    nag_text_script: str = ""
     log_level: str = "INFO"
 
     @property
@@ -111,6 +114,7 @@ def load() -> Config:
         p1_overdue_push_time=e("P1_OVERDUE_PUSH_TIME", "18:00"),
         calendar_days_ahead=int(e("CALENDAR_DAYS_AHEAD", "90") or 90),
         frame_ancestors=tuple(e("FRAME_ANCESTORS").replace(",", " ").split()),
+        nag_text_script=e("NAG_TEXT_SCRIPT"),
         log_level=e("LOG_LEVEL", "INFO").upper(),
     )
     problems = []

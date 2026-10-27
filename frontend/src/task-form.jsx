@@ -16,6 +16,9 @@ const EMPTY_HOMELAB = {...EMPTY, category:'New projects', priority:3, stage:'ide
 const TAB_NAME = {'one-off':'One-off tasks', recurring:'Recurring tasks', homelab:'Homelab'};
 const PRIORITY_OPTIONS = [['3', 'Low'], ['2', 'Medium'], ['1', 'High']];
 const tabOf = t => t.area === 'homelab' ? 'homelab' : t.repeats ? 'recurring' : 'one-off';
+// Nagging is set through the API for now; the form only says so.
+const nagText = nag => !nag ? '' : [nag.every && ` · reminds every ${nag.every} min`,
+  nag.escalate_at && ` · critical from ${nag.escalate_at}${nag.escalate_every ? ` every ${nag.escalate_every} min` : ''}`].filter(Boolean).join('');
 
 export function TaskForm({id, from = 'one-off', boot, me}) {
   const [form, setForm] = useState(id ? null : from === 'recurring' ? EMPTY_RECURRING : from === 'homelab' ? EMPTY_HOMELAB : EMPTY), [task, setTask] = useState(null), [history, setHistory] = useState([]);
@@ -80,7 +83,7 @@ export function TaskForm({id, from = 'one-off', boot, me}) {
   return <div className="tasks-stack">
     <PageHeader eyebrow={<a href={`#/${from}`}>← {TAB_NAME[from] || 'Tasks'}</a>} title={task ? task.title : from === 'recurring' ? 'New recurring task' : from === 'homelab' ? 'New homelab task' : 'New task'}
       description={task && (lab ? <>{task.status === 'open' ? STAGES.find(([s]) => s === (task.stage || 'idea'))[1] : `Status: ${task.status}`} · {task.category}</>
-        : <>{task.status === 'open' ? dueText(task) : `Status: ${task.status}`}{task.repeats ? ` · ${task.schedule_text}` : ''}</>)}/>
+        : <>{task.status === 'open' ? dueText(task) : `Status: ${task.status}`}{task.repeats ? ` · ${task.schedule_text}` : ''}{nagText(task.nag)}</>)}/>
     {action.error && <Alert tone="error">{action.error}</Alert>}
     {open && <Card><div className="tasks-row">
       <div className="tasks-inline">

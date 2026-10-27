@@ -334,6 +334,102 @@ class QuietHours(Base):
         self.assertEqual(self.tasks.create({"title": "d", "repeat": "every saturday at 9am"})["schedule"]["due_time"], "09:00")
 
 
+class Nagging(Base):
+    """A daily task that repeats its reminder every 30 minutes from 09:00 and
+    escalates to a critical push for both people every hour from 12:00."""
+    NAG = {"every": 30, "escalate_at": "12:00", "escalate_every": 60, "escalate_to": ["alex", "Sam"]}
+
+    def setUp(self):
+        super().setUp()
+        self.t = self.tasks.create({"title": "Morning pills", "assignee": "alex", "priority": "high", "due": "2026-10-19",
+                                    "schedule": {"kind": "rrule", "rrule": "FREQ=DAILY", "due_time": "09:00"},
+                                    "nag": self.NAG})
+
+    def sched(self, night=False):
+        from app.scheduler import Scheduler
+        s = Scheduler(self.cfg, self.store, self.tasks, Shopping(self.store, self.clock), None, None)
+        s.quiet_state = (night, self.clock())
+        return s
+
+    def at(self, hh, mm=0, day=date(2026, 10, 19)):
+        self.clock.set(day, hh, mm)
+        return self.clock()
+
+    def push(self, s, hh, mm=0, day=date(2026, 10, 19)):
+        now = self.at(hh, mm, day)
+        s.quiet_state = (s.quiet_state[0], now)
+        return [r for r in asyncio.run(s.nag_push(now)) if r["status"] == "dry-run"]
+
+    def test_fields_validate_and_serialize(self):
+        self.assertEqual(self.t["nag"], {"every": 30, "escalate_at": "12:00", "escalate_every": 60,
+                                         "escalate_to": ["alex", "sam"]})
+        with self.assertRaises(TaskError):
+            self.tasks.create({"title": "x", "nag": {"escalate_at": "12:00"}})          # escalate to nobody
+        with self.assertRaises(TaskError):
+            self.tasks.create({"title": "x", "nag": {"every": 2}})                       # too often
+        homelab = self.tasks.create({"title": "Deploy", "category": "Tasks app", "nag": self.NAG})
+        self.assertIsNone(homelab["nag"])
+        self.assertIsNone(self.tasks.patch(self.t["id"], {"nag": None})["nag"])
+
+    def test_steps(self):
+        s = self.sched()
+        step = lambda hh, mm=0: (lambda r: r and (r[0], r[1], r[2].strftime("%H:%M"), r[3]))(
+            s.nag_step(self.tasks.get(self.t["id"]), self.at(hh, mm)))
+        self.assertIsNone(step(8, 59))
+        self.assertEqual(step(9, 0), (False, 0, "09:00", 0))
+        self.assertEqual(step(9, 45), (False, 1, "09:30", 30))
+        self.assertEqual(step(11, 59), (False, 5, "11:30", 150))
+        self.assertEqual(step(12, 0), (True, 0, "12:00", 180))
+        self.assertEqual(step(13, 10), (True, 1, "13:00", 240))
+
+    def test_repeats_escalates_and_stops_when_done(self):
+        s = self.sched()
+        first = self.push(s, 9, 0)
+        self.assertEqual(len(first), 2)                                   # phone and the group
+        self.assertIn("['notify_alex']", first[0]["summary"])
+        self.assertEqual(self.push(s, 9, 10), [])                         # once per slot
+        self.assertEqual(len(self.push(s, 9, 30)), 2)
+        s.quiet_state = (True, self.clock())
+        self.assertEqual(self.push(s, 10, 0), [])                         # night mode holds the repeats
+        esc = self.push(s, 12, 0)                                          # ...but not the escalation
+        self.assertTrue(esc and esc[0]["summary"].startswith("⚠️ Morning pills"))
+        self.assertIn("['notify_alex', 'notify_sam']", esc[0]["summary"])
+        self.assertEqual(self.push(s, 12, 30), [])
+        self.assertEqual(len(self.push(s, 13, 0)), 2)
+        self.tasks.complete(self.t["id"], done_by="sam")
+        self.assertEqual(self.push(s, 14, 0), [])
+
+    def test_a_missed_day_rolls_over_at_midnight(self):
+        s = self.sched()
+        self.push(s, 12, 0)
+        self.at(0, 1, date(2026, 10, 20))
+        rolled = s.roll_over(self.clock())
+        self.assertEqual(rolled, [{"task_id": self.t["id"], "missed": "2026-10-19", "next": "2026-10-20"}])
+        hist = self.tasks.completions(self.t["id"])
+        self.assertEqual((hist[0]["kind"], hist[0]["source"]), ("skip", "missed"))
+        self.assertEqual(s.roll_over(self.clock()), [])
+        self.assertEqual(self.push(s, 8, 0, date(2026, 10, 20)), [])
+        again = self.push(s, 9, 0, date(2026, 10, 20))
+        self.assertTrue(again and not again[0]["summary"].startswith("⚠️"))   # a fresh, friendly start
+
+    def test_wording_gets_snippier_and_stays_off_other_reminders(self):
+        t = self.tasks.get(self.t["id"])
+        lines = [digest.nag(t, i, i * 30, False, ["Alex"])["fallback"] for i in range(6)]
+        self.assertEqual(len(set(lines)), 6)
+        self.assertTrue(all("Morning pills" in l for l in lines[1:]))
+        esc = digest.nag(t, 0, 180, True, ["Alex", "Sam"])
+        self.assertIn("Alex and Sam have been looped in", esc["fallback"])
+        self.assertIn("Sam", esc["prompt"])
+        self.assertEqual([digest.elapsed_text(m) for m in (30, 60, 90, 150, 180)],
+                         ["30 minutes", "an hour", "an hour and a half", "2 and a half hours", "3 hours"])
+        self.assertNotIn(t["id"], digest.dog_alarm(self.tasks.open_tasks(), first_today=True)["due_today"])
+        from fastapi.testclient import TestClient
+        from app.web import create_app
+        app = create_app(cfg=self.cfg, store=self.store, clock=self.clock, start_scheduler=False)
+        with TestClient(app) as c:
+            self.assertNotIn("Morning pills", c.get("/calendar-reminders.ics").text)
+
+
 class ShoppingBehaviour(Base):
     def test_add_buy_dedupe_and_archive(self):
         shop = Shopping(self.store, self.clock)
@@ -606,6 +702,9 @@ class TelegramTidy(Base):
         skipped = self.tasks.skip(t["id"], "switch", "switch")
         self.assertEqual(digest.closed_line("skipped", skipped), f"⏭️ Water plants skipped (next {skipped['due_text']})"
                                                                  " — with the switch")
+        missed = self.tasks.skip(t["id"], "Tasks", "missed")   # a nagging task's roll-over
+        self.assertEqual(digest.closed_line("skipped", missed), f"⏭️ Water plants skipped (next {missed['due_text']})"
+                                                                " — not done that day")
         self.assertEqual(digest.closed_line("archived", self.tasks.archive(t["id"])), "🗄️ Water plants archived")
 
     def test_old_messages_buttonless_rows_and_dry_runs_are_left_alone(self):
