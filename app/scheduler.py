@@ -12,6 +12,7 @@ write rows on dry-<channel>, which don't block real sends later.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from datetime import datetime, timedelta
 
@@ -21,12 +22,13 @@ from .config import Config
 from .ha import HomeAssistant
 from .shopping import Shopping
 from .store import Store
-from .tasks import Tasks, occurrence_key
+from .tasks import TaskError, Tasks, occurrence_key
 
 log = logging.getLogger("tasks.scheduler")
 CATCH_UP = timedelta(hours=3)
 QUIET_STATE_TTL = timedelta(minutes=5)   # older than this -> fall back to the clock window
 MAX_DIGEST_BUTTONS = 10
+TIDY_DAYS = 7   # Telegram messages older than this keep their buttons when a task closes
 
 
 class Scheduler:
@@ -140,9 +142,47 @@ class Scheduler:
     async def _telegram(self, kind: str, bucket: str, title: str, text: str, buttons: list[dict], task_ids: list[int]):
         mid = await self.bot.send(title, text, buttons)
         with self.store.tx() as db:
-            db.execute("INSERT OR REPLACE INTO telegram_messages(message_id, kind, bucket, task_ids, sent_at) VALUES (?,?,?,?,?)",
-                       (mid, kind, bucket, ",".join(map(str, task_ids)), self.tasks.now().isoformat(timespec="seconds")))
+            db.execute("INSERT OR REPLACE INTO telegram_messages(message_id, kind, bucket, task_ids, sent_at, buttons)"
+                       " VALUES (?,?,?,?,?,?)",
+                       (mid, kind, bucket, ",".join(map(str, task_ids)), self.tasks.now().isoformat(timespec="seconds"),
+                        json.dumps(buttons)))
         return f"message {mid}"
+
+    def _live(self, b: dict) -> bool:
+        """Would this button still work? Its task is open at the same occurrence and not snoozed."""
+        try:
+            t = self.tasks.get(int(b["task_id"]))
+        except TaskError:
+            return False
+        return (t["status"] == "open" and t["occurrence"] == b["occurrence"]
+                and not (t["snoozed_until"] and t["snoozed_until"] > self.tasks.today().isoformat()))
+
+    def _offering(self, task_id: int) -> list[dict]:
+        """Recent Telegram messages whose stored buttons include this task."""
+        since = (self.tasks.now() - timedelta(days=TIDY_DAYS)).isoformat(timespec="seconds")
+        rows = self.store.all("SELECT message_id, buttons FROM telegram_messages"
+                              " WHERE buttons IS NOT NULL AND buttons != '[]' AND sent_at >= ?", (since,))
+        return [r for r in rows if any(b["task_id"] == task_id for b in json.loads(r["buttons"]))]
+
+    async def _tidy_telegram(self, event: str, task: dict, rows: list[dict]) -> str:
+        """Take a task closed elsewhere off the Telegram messages that still offer it:
+        each keeps only the buttons that still work, plus a line saying who closed
+        it and where. Editing is silent (nothing pushes or rings), so night mode
+        doesn't hold it. The message a button tap came from is ingest-bot's to edit."""
+        line, edited, failed = digest.closed_line(event, task), [], []
+        for r in rows:
+            live = [b for b in json.loads(r["buttons"]) if self._live(b)]
+            try:
+                await self.bot.update(r["message_id"], live, line, task["id"])
+            except Exception as e:
+                failed.append(f"{r['message_id']}: {e}")
+                continue
+            with self.store.tx() as db:
+                db.execute("UPDATE telegram_messages SET buttons=? WHERE message_id=?", (json.dumps(live), r["message_id"]))
+            edited.append(str(r["message_id"]))
+        if failed:
+            raise RuntimeError(f"edited {edited or 'none'}; failed {'; '.join(failed)}")
+        return f"edited message {', '.join(edited)}"
 
     # ------------------------------------------------------------ jobs
     async def p0_push(self, now: datetime, force=False, dry=None, only_task=None, to=None) -> list[dict]:
@@ -325,3 +365,8 @@ class Scheduler:
         if entity := self._switch_entity(task):
             await self.deliver(task["id"], f"switch_off_{event}", bucket, "ha_switch",
                                lambda: self.ha.set_switch(entity, False), f"{entity} off", dry=dry)
+        if rows := self._offering(task["id"]):
+            await self.deliver(task["id"], f"telegram_tidy_{event}", bucket, "telegram",
+                               lambda: self._tidy_telegram(event, task, rows),
+                               f"{digest.closed_line(event, task)} → messages {', '.join(str(r['message_id']) for r in rows)}",
+                               dry=dry)

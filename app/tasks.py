@@ -395,6 +395,7 @@ class Tasks:
         task["completion_id"] = cur.lastrowid
         task["previous"] = {"nominal_due": prev["nominal_due"], "occurrence": occurrence_key(prev)}
         task["closed"] = task["status"] != "open"
+        task["closed_by"], task["closed_via"] = str(done_by or ""), str(source or "")
         self._emit("completed" if kind == "done" else "skipped", task)
         return task
 
@@ -443,6 +444,7 @@ class Tasks:
                            (_iso(target), self.now().isoformat(timespec="seconds"), task_id))
         task = self.get(task_id)
         task["snoozed_by"] = done_by
+        task["closed_by"], task["closed_via"] = str(done_by or ""), str(source or "")
         self._emit("snoozed", task)
         return task
 

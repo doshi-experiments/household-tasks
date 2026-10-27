@@ -531,6 +531,101 @@ class Undo(Base):
         self.assertTrue(s.sent(t["id"], "switch_on_undo", self.clock().isoformat(timespec="minutes"), "dry-ha_switch"))
 
 
+class FakeBot:
+    def __init__(self):
+        self.sent, self.updates, self.next_id = [], [], 100
+
+    async def send(self, title, text, buttons=None, edit_message_id=None):
+        self.next_id += 1
+        self.sent.append((self.next_id, title, text, buttons))
+        return self.next_id
+
+    async def update(self, message_id, buttons, line, task_id):
+        self.updates.append((message_id, [(b["task_id"], b["op"]) for b in buttons], line, task_id))
+        return message_id
+
+
+class FakeHA:
+    enabled = True
+
+    async def clear(self, targets, tag):
+        return "cleared"
+
+    async def set_switch(self, entity, on):
+        return "switched"
+
+
+class TelegramTidy(Base):
+    """A task closed anywhere but its own Telegram button comes off the messages
+    that still offer it, with a line saying who closed it and where."""
+    def setUp(self):
+        super().setUp()
+        from app.scheduler import Scheduler
+        self.bot = FakeBot()
+        self.s = Scheduler(make_cfg(notify_enabled=True), self.store, self.tasks, Shopping(self.store, self.clock),
+                           FakeHA(), self.bot)
+
+    def post(self, *tasks, kind="digest_morning"):
+        buttons = [b for t in tasks for b in self.s._buttons(t)]
+        asyncio.run(self.s._telegram(kind, "2026-10-19", "Morning", "…", buttons, [t["id"] for t in tasks]))
+        return self.bot.next_id
+
+    def close(self, event, task):
+        asyncio.run(self.s._after_close(event, task))
+
+    def test_buttons_go_and_a_line_says_who_and_where(self):
+        a = self.tasks.create({"title": "Take out the bins", "due": "2026-10-19"})
+        b = self.tasks.create({"title": "Call the plumber", "due": "2026-10-19"})
+        mid = self.post(a, b)
+        self.close("completed", self.tasks.complete(a["id"], "Sam", "web"))
+        self.assertEqual(self.bot.updates, [(mid, [(b["id"], "done"), (b["id"], "snooze")],
+                                             "✅ Take out the bins — Sam, in the app", a["id"])])
+        self.close("snoozed", self.tasks.snooze(b["id"], days=2, done_by="phone", source="ha_push"))
+        self.assertEqual(self.bot.updates[1][1:3], ([], "💤 Call the plumber snoozed until "
+                                                    f"{self.tasks.get(b['id'])['due_text']} — from a phone notification"))
+        self.assertEqual(self.s._offering(b["id"]), [])   # no buttons left: never edited again
+
+    def test_every_message_offering_it_and_only_those(self):
+        meds = self.tasks.create({"title": "Meds", "priority": "critical", "due": "2026-10-19",
+                                  "schedule": {"kind": "interval", "interval_n": 30, "interval_unit": "days"}})
+        other = self.tasks.create({"title": "Other", "due": "2026-10-19"})
+        digest_id, nag_id, other_id = self.post(meds, other), self.post(meds, kind="p0"), self.post(other)
+        done = self.tasks.complete(meds["id"], "Alex", "telegram", occurrence=meds["occurrence"])
+        self.close("completed", done)
+        self.assertEqual([u[0] for u in self.bot.updates], [digest_id, nag_id])   # ingest-bot skips the tapped one
+        self.assertEqual(self.bot.updates[0][1], [(other["id"], "done"), (other["id"], "snooze")])
+        self.assertEqual(self.bot.updates[0][2], f"✅ Meds (next {done['due_text']}) — Alex, in Telegram")
+        self.assertTrue(self.s.sent(meds["id"], "telegram_tidy_completed", self.clock().isoformat(timespec="minutes"),
+                                    "telegram"))
+        self.assertNotIn(other_id, [u[0] for u in self.bot.updates])
+
+    def test_lines_for_skip_archive_and_the_switch(self):
+        t = self.tasks.create({"title": "Water plants", "due": "2026-10-19",
+                               "schedule": {"kind": "interval", "interval_n": 1, "interval_unit": "weeks"}})
+        self.post(t)
+        skipped = self.tasks.skip(t["id"], "switch", "switch")
+        self.assertEqual(digest.closed_line("skipped", skipped), f"⏭️ Water plants skipped (next {skipped['due_text']})"
+                                                                 " — with the switch")
+        self.assertEqual(digest.closed_line("archived", self.tasks.archive(t["id"])), "🗄️ Water plants archived")
+
+    def test_old_messages_buttonless_rows_and_dry_runs_are_left_alone(self):
+        t = self.tasks.create({"title": "Old one", "due": "2026-10-19"})
+        self.post(t)
+        with self.store.tx() as db:   # sent before buttons were stored, and a week-old one
+            db.execute("INSERT INTO telegram_messages(message_id, kind, bucket, task_ids, sent_at) VALUES (1,'p0','x',?,?)",
+                       (str(t["id"]), "2026-10-19T09:00:00"))
+            db.execute("UPDATE telegram_messages SET sent_at='2026-10-11T09:00:00' WHERE message_id=?", (self.bot.next_id,))
+        self.close("completed", self.tasks.complete(t["id"], "Sam", "web"))
+        self.assertEqual(self.bot.updates, [])
+        u = self.tasks.create({"title": "Dry", "due": "2026-10-19"})
+        self.post(u)
+        self.s.cfg = make_cfg(notify_enabled=False)
+        self.close("completed", self.tasks.complete(u["id"], "Sam", "web"))
+        self.assertEqual(self.bot.updates, [])
+        self.assertTrue(self.s.sent(u["id"], "telegram_tidy_completed", self.clock().isoformat(timespec="minutes"),
+                                    "dry-telegram"))
+
+
 class QuickAdd(Base):
     def test_schedule_is_read_from_the_title(self):
         t = self.tasks.create({"title": "Water the plants every Saturday", "read_schedule": True,

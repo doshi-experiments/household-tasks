@@ -79,6 +79,28 @@ def p0_push(t: dict, today: date) -> tuple[str, str]:
     return title, msg
 
 
+CLOSED_VIA = {"web": "in the app", "ha_push": "from a phone notification", "switch": "with the switch",
+              "telegram": "in Telegram"}
+
+
+def closed_line(event: str, t: dict) -> str:
+    """The line added under a Telegram message when one of its tasks is closed
+    somewhere else, shaped like a button tap's ("✅ Title (next …) — Alex")."""
+    nxt = "" if t.get("closed") or not t["eff_due"] else f" (next {t['due_text']})"
+    if event == "completed":
+        head = f"✅ {t['title']}{nxt}"
+    elif event == "skipped":
+        head = f"⏭️ {t['title']} skipped{nxt}"
+    elif event == "snoozed":
+        head = f"💤 {t['title']} snoozed until {t['due_text']}"
+    else:
+        head = f"🗄️ {t['title']} archived"
+    by = t.get("closed_by") or ""
+    by = "" if by in ("switch", "phone") else by   # the hooks' stand-ins when no person is known
+    who = ", ".join(x for x in (by, CLOSED_VIA.get(t.get("closed_via") or "", "")) if x)
+    return head + (f" — {who}" if who else "")
+
+
 def p1_overdue_push(t: dict) -> tuple[str, str]:
     n = t["days_overdue"]
     return f"Overdue: {t['title']}", f"{n} day{'s' if n != 1 else ''} overdue (high priority). Snooze it if it can wait."

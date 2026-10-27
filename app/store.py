@@ -74,7 +74,7 @@ CREATE TABLE IF NOT EXISTS notifications (
   UNIQUE (task_id, kind, bucket, channel));
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS telegram_messages (
-  message_id INTEGER PRIMARY KEY, kind TEXT, bucket TEXT, task_ids TEXT, sent_at TEXT);
+  message_id INTEGER PRIMARY KEY, kind TEXT, bucket TEXT, task_ids TEXT, sent_at TEXT, buttons TEXT);
 """
 
 CATEGORIES = [
@@ -130,12 +130,17 @@ class Store:
         2026-10-24: a completion keeps the task fields it changed (JSON), so the
         newest done or skip can be undone.
         2026-10-25: one shopping list; Everything Else merges into Groceries
-        (its items categorised Other) and items carry category, store and aisle."""
+        (its items categorised Other) and items carry category, store and aisle.
+        2026-10-26: a Telegram message keeps the buttons it still offers (JSON), so
+        a task closed elsewhere can be taken off it."""
         cols = {r[1] for r in self.db.execute("PRAGMA table_info(tasks)")}
+        tg_cols = {r[1] for r in self.db.execute("PRAGMA table_info(telegram_messages)")}
         cat_cols = {r[1] for r in self.db.execute("PRAGMA table_info(categories)")}
         done_cols = {r[1] for r in self.db.execute("PRAGMA table_info(completions)")}
         item_cols = {r[1] for r in self.db.execute("PRAGMA table_info(items)")}
         with self.tx() as db:
+            if "buttons" not in tg_cols:
+                db.execute("ALTER TABLE telegram_messages ADD COLUMN buttons TEXT")
             if "undo" not in done_cols:
                 db.execute("ALTER TABLE completions ADD COLUMN undo TEXT NOT NULL DEFAULT ''")
             if "area" not in cat_cols:
