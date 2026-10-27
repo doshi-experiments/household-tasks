@@ -218,8 +218,8 @@ class Scheduler:
         """Where a nagging task stands now: (escalated?, step, slot, minutes since due),
         or None when it has nothing to say. Only the current slot is ever sent, so
         slots missed in an outage are skipped rather than sent in a burst."""
-        n, due_time = t["nag"], t["schedule"]["due_time"]
-        if not n or not due_time or t["state"] != "due" or t["eff_due"] != now.date().isoformat():
+        n, due_time = t["nag"], t["schedule"]["due_time"] or self.cfg.default_due_time
+        if not n or t["state"] != "due" or t["eff_due"] != now.date().isoformat():
             return None
         start = self._at(now, due_time)
         if now < start:

@@ -224,8 +224,8 @@ def nag(t: dict, step: int, minutes_late: int, escalated: bool, people: list[str
         title = t["title"]
     fallback = line.format(**fill)
     fallback = fallback[0].upper() + fallback[1:]
-    due_time = t["schedule"]["due_time"] or ""
-    late = f" It was due at {due_time}, {fill['elapsed']} ago." if minutes_late else f" It's due now ({due_time})."
+    at = f" at {t['schedule']['due_time']}" if t["schedule"]["due_time"] else ""
+    late = f" It was due{at}, {fill['elapsed']} ago." if minutes_late else " It's due now."
     prompt = (f"Write a phone notification reminding {who} to do this task: {t['title']}.{late}"
               + (f" This goes to {_names(people)}." if escalated else "")
               + f" Tone: {tone} Playful, never mean, no swearing, and don't invent details about the task."

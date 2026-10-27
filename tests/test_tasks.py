@@ -381,6 +381,10 @@ class Nagging(Base):
         self.assertEqual(step(11, 59), (False, 5, "11:30", 150))
         self.assertEqual(step(12, 0), (True, 0, "12:00", 180))
         self.assertEqual(step(13, 10), (True, 1, "13:00", 240))
+        with self.store.tx() as db:   # an older task with no time of its own starts at the default
+            db.execute("UPDATE tasks SET due_time=NULL, escalate_at=NULL WHERE id=?", (self.t["id"],))
+        self.assertIsNone(step(17, 29))
+        self.assertEqual(step(17, 30), (False, 0, "17:30", 0))
 
     def test_repeats_escalates_and_stops_when_done(self):
         s = self.sched()

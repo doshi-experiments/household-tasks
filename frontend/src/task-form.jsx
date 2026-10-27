@@ -4,19 +4,19 @@ import {api, del, patch, post} from './api';
 import {useAction, useOnChange} from './hooks';
 import {Pending} from './pending';
 import {ScheduleBuilder} from './schedule-builder';
+import {NagBuilder, nagBody, nagFromTask} from './nag';
 import {PRIORITY_WORD, dueText} from './tasks';
 import {STAGES} from './homelab';
 import {celebrate} from './celebrate';
 import {addedToast, archivedToast, doneToast} from './undo';
 
-const EMPTY = {title:'', notes:'', category:'Inbox', priority:2, alarm:false, assignee:'', due:'',
+const EMPTY = {title:'', notes:'', category:'Inbox', priority:2, alarm:false, assignee:'', due:'', nag:null,
   schedule:{kind:'none', rrule:null, interval_n:null, interval_unit:null, flex:'exact', due_time:null}};
 const EMPTY_RECURRING = {...EMPTY, schedule:{...EMPTY.schedule, kind:'interval', interval_n:1, interval_unit:'weeks'}};
 const EMPTY_HOMELAB = {...EMPTY, category:'New projects', priority:3, stage:'idea'};
 const TAB_NAME = {'one-off':'One-off tasks', recurring:'Recurring tasks', homelab:'Homelab'};
 const PRIORITY_OPTIONS = [['3', 'Low'], ['2', 'Medium'], ['1', 'High']];
 const tabOf = t => t.area === 'homelab' ? 'homelab' : t.repeats ? 'recurring' : 'one-off';
-// Nagging is set through the API for now; the form only says so.
 const nagText = nag => !nag ? '' : [nag.every && ` · reminds every ${nag.every} min`,
   nag.escalate_at && ` · critical from ${nag.escalate_at}${nag.escalate_every ? ` every ${nag.escalate_every} min` : ''}`].filter(Boolean).join('');
 
@@ -30,7 +30,7 @@ export function TaskForm({id, from = 'one-off', boot, me}) {
       const t = r.task;
       setTask(t); setHistory(r.completions);
       setForm({title:t.title, notes:t.notes, category:t.category, priority:t.priority, alarm:t.alarm, assignee:t.assignee || '', stage:t.stage || 'idea',
-        due:t.due || '', schedule:{...t.schedule}});
+        due:t.due || '', schedule:{...t.schedule}, nag:nagFromTask(t.nag)});
     } catch (e) {setLoadError(e.message);}
   };
   useEffect(() => {if (id) load();}, [id]);
@@ -46,7 +46,7 @@ export function TaskForm({id, from = 'one-off', boot, me}) {
     const body = lab
       ? {title:form.title, notes:form.notes, category:form.category, priority:PRIORITY_WORD[form.priority], stage:form.stage || 'idea'}
       : {title:form.title, notes:form.notes, category:form.category, priority:PRIORITY_WORD[form.priority], alarm:form.alarm,
-        assignee:form.assignee || null, schedule:form.schedule};
+        assignee:form.assignee || null, schedule:form.schedule, nag:nagBody(form.nag)};
     // Changing the date moves the next occurrence; leave it out unless it changed.
     if (!lab && (!task || form.due !== (task.due || ''))) body.due = form.due || null;
     if (task && task.status === 'done' && lab) delete body.stage;   // a finished task keeps its stage until reopened
@@ -121,6 +121,7 @@ export function TaskForm({id, from = 'one-off', boot, me}) {
       <CheckboxField label="Alarm until done" checked={form.alarm} onCheckedChange={alarm => set({alarm})}
             hint="A critical push every day until someone marks it done: with the evening feed-the-dogs announcement (8:30 PM if that doesn’t play), or at the task’s own time if you set one other than 5:30 PM. Also read out with the announcement."/>
       <ScheduleBuilder value={form.schedule} onChange={schedule => set({schedule})} anchor={form.due || task?.schedule.anchor_date}/>
+      <NagBuilder value={form.nag} onChange={nag => set({nag})} dueTime={form.schedule.due_time} assignee={form.assignee} people={boot.people}/>
       </>}
       <label className="tasks-textarea"><span className="ds-field-label">Notes</span>
         <textarea className="ds-text-input" rows={3} value={form.notes} onChange={e => set({notes:e.target.value})}/></label>
