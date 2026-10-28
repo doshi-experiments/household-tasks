@@ -162,106 +162,100 @@ def day_label(d: date, today: date) -> str:
 
 # ------------------------------------------------------------ nagging
 # Each repeat of a nagging task's reminder is a step more passive-aggressive, in
-# a house voice picked at random for each reminder. Fixed lines: {title}, {who}
-# (the assignee, or everyone), {elapsed} since it was due, and for escalations
-# {everyone} who gets it and {have}.
+# one house voice for the whole day. The lines don't name the task (the phone
+# push carries it as its title; the Telegram group gets the line alone), and
+# the Done button speaks in the same voice. Placeholders: {who} (the assignee,
+# or everyone), {elapsed} since it was due, and for escalations {everyone} who
+# gets it and {have}.
 NAG_VOICES = {
-    "Plain": {   # a polite office email, slowly losing its composure
-        "nag": [
-            "{title}: due now. Tap Done when it's done. Easy.",
-            "Quick nudge on {title}. Should only take a second. Tap Done.",
-            "Just circling back on {title}! No rush. (There is a little rush.) Tap Done.",
-            "Per my last three reminders: {title}. The Done button is exactly where we left it.",
-            "{elapsed} on {title}. I've started a spreadsheet. Tap Done so I can delete it.",
-            "{elapsed}. I'm not upset about {title}. I'll just sit here quietly until someone taps Done.",
-        ],
-        "escalate": [
-            "As {title} has been pending for {elapsed}, I've taken the liberty of cc'ing {everyone}. Tap Done whenever suits. Now suits.",
-            "{elapsed} and counting on {title}. {everyone}, I'll keep sending these. I have nothing but time. Tap Done.",
-        ],
-    },
     "Gen Z": {
+        "done": "Ate. Done 💅",
         "nag": [
-            "{who}, it's {title} o'clock 💅 Tap Done and go be iconic.",
-            "{title} is still just sitting there. Not a vibe. Tap Done, bestie.",
-            "Not me checking on {title} again after {elapsed}. Lowkey begging. Tap Done.",
-            "{title}. Again. I said what I said. It's literally one button. Tap Done.",
-            "{elapsed} of leaving {title} on read?? The disrespect is giving. Tap Done.",
-            "{elapsed} and {title} still isn't done. I need everyone to act normal. Tap Done. 😭",
+            "{who}, it's time 💅 Do the thing and go be iconic.",
+            "It's still just sitting there. Not a vibe, bestie.",
+            "Not me checking in again after {elapsed}. Lowkey begging rn.",
+            "Again?? I said what I said. It's literally one button.",
+            "{elapsed} of leaving it on read. The disrespect is giving.",
+            "{elapsed} and it's still not done. I need everyone to act normal. 😭",
         ],
         "escalate": [
-            "Okay so {title} got ghosted for {elapsed}, so I added {everyone} to the chat. This is an intervention. Tap Done.",
-            "{elapsed}. {title}. Still. {everyone}, this is giving main-character neglect. Someone tap Done, fr fr.",
+            "Okay so this got ghosted for {elapsed}, so I added {everyone} to the chat. This is an intervention.",
+            "{elapsed}. Still. {everyone}, this is giving main-character neglect. Someone tap it, fr fr.",
         ],
     },
     "Shakespearean": {
+        "done": "'Tis done, forsooth",
         "nag": [
-            "Hark, {who}! The hour of {title} is come. Tap Done, and be thou blessed.",
-            "Good {who}, doth {title} slip thy mind? One gentle Done would mend all.",
-            "{elapsed} hath crept by on silent feet, and {title} yet waits. I but inquire. Tap Done.",
-            "Once more unto the breach: {title}! Methinks the Done button doth protest too little.",
-            "{elapsed}! Is it neglect, or some deeper villainy? {title} cries out for justice. Tap Done.",
-            "{title}, forsaken {elapsed}. Et tu, {who}? End this tragedy in one act: tap Done.",
+            "Hark, {who}! The appointed hour is come. Do the deed, and be thou blessed.",
+            "Good {who}, doth it slip thy mind? One gentle tap would mend all.",
+            "{elapsed} hath crept by on silent feet, and still it waits. I but inquire.",
+            "Once more unto the breach, dear {who}! Methinks the button doth protest too little.",
+            "{elapsed}! Is this neglect, or some deeper villainy? Justice cries out.",
+            "Forsaken {elapsed}. Et tu, {who}? End this tragedy in one act.",
         ],
         "escalate": [
-            "Alas! {title} lies unheeded {elapsed}, so I have summon'd {everyone} to court. Whoso taps Done first shall be knighted.",
-            "{elapsed}! A plague upon this house! {everyone}, the fate of {title} rests with thee. Tap Done, ere I weep.",
+            "Alas! Unheeded {elapsed}, so I have summon'd {everyone} to court. Whoso tappeth first shall be knighted.",
+            "{elapsed}! A plague upon this house! {everyone}, the fate of this deed rests with thee. Tap, ere I weep.",
         ],
     },
     "Pirate": {
+        "done": "Aye, 'tis done ⚓",
         "nag": [
-            "Ahoy, {who}! {title} be due. Tap Done an' earn yer grog.",
-            "Arr, {title} still be sittin' on deck. Tap Done, matey.",
-            "{elapsed} at sea an' no sign o' {title}. Just askin', savvy? Tap Done.",
-            "As I bellowed afore: {title}! The Done button be right there, ye barnacle.",
-            "{elapsed} adrift with no {title}. The crew be whisperin' mutiny. Tap Done.",
-            "{elapsed}! Even the parrot be ashamed o' {title}. Tap Done, ye scallywag.",
+            "Ahoy, {who}! 'Tis time. Do the deed an' earn yer grog.",
+            "Arr, it still be sittin' on deck, matey.",
+            "{elapsed} at sea an' nary a sign of it. Just askin', savvy?",
+            "As I bellowed afore! The button be right there, ye barnacle.",
+            "{elapsed} adrift. The crew be whisperin' mutiny.",
+            "{elapsed}! Even the parrot be ashamed o' ye, scallywag.",
         ],
         "escalate": [
-            "All hands! {title} be ignored for {elapsed}, so I've piped {everyone} aboard. First to tap Done gets the treasure.",
-            "{elapsed} o' {title} undone! {everyone}, tap Done or the lot o' ye walk the plank.",
+            "All hands! Ignored for {elapsed}, so I've piped {everyone} aboard. First to tap gets the treasure.",
+            "{elapsed} an' still undone! {everyone}, tap it or the lot o' ye walk the plank.",
         ],
     },
     "Mad scientist": {
+        "done": "Eureka! Done 🧪",
         "nag": [
-            "The experiment begins! Subject {who}: {title} is due. Tap Done to record the result. Mwahaha.",
-            "Observation: {title} remains incomplete. Fascinating. Tap Done, for science.",
-            "{elapsed} into the trial and {title} is still pending. My notes grow concerned. Tap Done.",
-            "Hypothesis: you saw my last reminder about {title}. Conclusion: tap Done.",
-            "{elapsed}! The data suggests deliberate avoidance of {title}. Tap Done before I publish.",
-            "{elapsed} of {title} ignored. My assistant has fainted. The beakers weep. TAP. DONE.",
+            "The experiment begins! Subject {who}, it is time. Record the result. Mwahaha.",
+            "Observation: still incomplete. Fascinating. Proceed, for science.",
+            "{elapsed} into the trial and no result. My notes grow concerned.",
+            "Hypothesis: you saw my last reminder. Conclusion: press the button.",
+            "{elapsed}! The data suggests deliberate avoidance. Press it before I publish.",
+            "{elapsed} of silence. My assistant has fainted. The beakers weep. PRESS. IT.",
         ],
         "escalate": [
-            "Containment breach! {title} unattended for {elapsed}, so I've summoned {everyone} to the lab. Whoever taps Done saves the experiment.",
-            "{elapsed}! The reactor of disappointment is going critical over {title}. {everyone}, tap Done before it blows!",
+            "Containment breach! Unattended for {elapsed}, so I've summoned {everyone} to the lab. Whoever presses first saves the experiment.",
+            "{elapsed}! The reactor of disappointment is going critical. {everyone}, press it before it blows!",
         ],
     },
     "NYC cabbie": {
+        "done": "Yeah yeah, done 🚕",
         "nag": [
-            "Yo {who}, {title}. Now's good. Tap Done, I got places to be.",
-            "Still waitin' on {title}. Meter's runnin', buddy. Tap Done.",
-            "{elapsed} I'm idlin' out front for {title}. Just sayin'. Tap Done.",
-            "Whaddya want, a written invitation? {title}. Done button. Go.",
-            "{elapsed}! I've seen the BQE move faster than {title}. Tap Done already.",
-            "{elapsed} for {title}? I drove to Jersey and back. Twice. Tap Done, would ya?",
+            "Yo {who}, it's time. Now's good. I got places to be.",
+            "Still waitin' here. Meter's runnin', buddy.",
+            "{elapsed} I'm idlin' out front. Just sayin'.",
+            "Whaddya want, a written invitation? Button. Go.",
+            "{elapsed}! I've seen the BQE move faster than this.",
+            "{elapsed}? I drove to Jersey and back. Twice. Would ya tap the thing?",
         ],
         "escalate": [
-            "Alright, {title}'s been sittin' there {elapsed}, so I called in {everyone}. First one to tap Done gets the tip.",
-            "{elapsed} of {title}. Unbelievable. {everyone}, tap Done before I lean on this horn.",
+            "Alright, it's been sittin' there {elapsed}, so I called in {everyone}. First one to tap gets the tip.",
+            "{elapsed}. Unbelievable. {everyone}, tap it before I lean on this horn.",
         ],
     },
     "Robot": {
+        "done": "TASK COMPLETE 🤖",
         "nag": [
-            "BEEP. {title} is due. Awaiting Done. Have a nice day.",
-            "Status check: {title} incomplete. Please tap Done. Thank you for your cooperation.",
-            "Following up on {title}. Elapsed: {elapsed}. Compliance would be appreciated. Tap Done.",
-            "Per previous transmission: {title}. Done button located. Awaiting input. Still awaiting input.",
-            "{elapsed} without {title}. Patience subroutine at 12%. Tap Done.",
-            "{elapsed}. {title}. Still. Disappointment module fully engaged. This unit is fine. Tap Done.",
+            "BEEP. Scheduled task is due, {who}. Awaiting confirmation. Have a nice day.",
+            "Status check: task incomplete. Please confirm. Thank you for your cooperation.",
+            "Following up. Elapsed: {elapsed}. Compliance would be appreciated.",
+            "Per previous transmission: button located. Awaiting input. Still awaiting input.",
+            "{elapsed} without confirmation. Patience subroutine at 12%.",
+            "{elapsed}. Still. Disappointment module fully engaged. This unit is fine.",
         ],
         "escalate": [
-            "Escalation protocol initiated: {title} incomplete for {elapsed}. {everyone} {have} been notified. First to tap Done wins.",
-            "{elapsed} of {title} undone. This unit is not angry. This unit is disappointed. {everyone}: tap Done.",
+            "Escalation protocol initiated: task incomplete for {elapsed}. {everyone} {have} been notified. First to confirm wins.",
+            "{elapsed} undone. This unit is not angry. This unit is disappointed. {everyone}: confirm.",
         ],
     },
 }
@@ -283,14 +277,18 @@ def elapsed_text(minutes: int) -> str:
 
 
 def nag(t: dict, step: int, minutes_late: int, escalated: bool, people: list[str], seed: str = "") -> dict:
-    """The reminder for one step of a nagging task: {text, voice}. There's no
-    heading: every line names the task, and an escalation starts with ⚠️.
+    """The reminder for one step of a nagging task: {title, line, telegram, done, voice}.
+    title: the phone push's heading (the task, ⚠️ first when escalated) over line,
+    the voiced text; telegram: all the group gets, the line alone (⚠️ first when
+    escalated); done: the Done button's label in the same voice.
     step counts from 0 at the due time; escalated steps count from 0 again.
-    people: who gets this one (names). seed picks the voice, so the same slot
-    always says the same thing."""
+    people: who gets this one (names). seed picks the voice: one per task per
+    day, so a day's reminders all speak the same way."""
     voice = random.Random(seed).choice(sorted(NAG_VOICES))
-    lines = NAG_VOICES[voice]["escalate" if escalated else "nag"]
+    v = NAG_VOICES[voice]
+    lines = v["escalate" if escalated else "nag"]
     text = lines[min(step, len(lines) - 1)].format(
-        title=t["title"], who=t["assignee_name"] or "everyone", elapsed=elapsed_text(minutes_late),
+        who=t["assignee_name"] or "everyone", elapsed=elapsed_text(minutes_late),
         everyone=_names(people), have="has" if len(people) == 1 else "have")
-    return {"text": ("⚠️ " if escalated else "") + text[0].upper() + text[1:], "voice": voice}
+    warn, line = "⚠️ " if escalated else "", text[0].upper() + text[1:]
+    return {"title": warn + t["title"], "line": line, "telegram": warn + line, "done": v["done"], "voice": voice}

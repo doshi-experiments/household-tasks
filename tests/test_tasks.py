@@ -396,7 +396,9 @@ class Nagging(Base):
         s.quiet_state = (True, self.clock())
         self.assertEqual(self.push(s, 10, 0), [])                         # night mode holds the repeats
         esc = self.push(s, 12, 0)                                          # ...but not the escalation
-        self.assertTrue(esc and esc[0]["summary"].startswith("⚠️ "))
+        self.assertTrue(esc and esc[0]["summary"].startswith("⚠️ Morning pills: "))   # the phone's title names it
+        self.assertEqual(esc[1]["channel"], "telegram")
+        self.assertTrue(esc[1]["summary"].startswith("⚠️ ") and "Morning pills" not in esc[1]["summary"])   # the group: just the line
         self.assertIn("['notify_alex', 'notify_sam']", esc[0]["summary"])
         self.assertEqual(self.push(s, 12, 30), [])
         self.assertEqual(len(self.push(s, 13, 0)), 2)
@@ -416,27 +418,29 @@ class Nagging(Base):
         again = self.push(s, 9, 0, date(2026, 10, 20))
         self.assertTrue(again and not again[0]["summary"].startswith("⚠️"))   # a fresh, friendly start
 
-    def test_wording_gets_snippier_in_a_random_house_voice(self):
+    def test_wording_one_house_voice_a_day_without_the_task_name(self):
         t = self.tasks.get(self.t["id"])
-        for voice, ladder in digest.NAG_VOICES.items():   # every line fills in, and each step differs
-            self.assertEqual((len(ladder["nag"]), len(ladder["escalate"])), (6, 2), voice)
-            for line in ladder["nag"] + ladder["escalate"]:
-                filled = line.format(title="Morning pills", who="Alex", elapsed="an hour", everyone="Alex", have="has")
-                self.assertNotIn("{", filled)
-                self.assertIn("Morning pills", filled)                         # no heading, so the line names the task
-            self.assertEqual(len({line for line in ladder["nag"]}), 6, voice)
-        seen = {digest.nag(t, 3, 90, False, ["Alex"], seed=f"{t['id']}:{slot}")["voice"]
-                for slot in range(40)}
-        self.assertGreater(len(seen), 3)                                    # voices vary from reminder to reminder
-        once, again = (digest.nag(t, 3, 90, False, ["Alex"], seed="7:2026-10-19T10:30") for _ in range(2))
-        self.assertEqual(once, again)                                       # a slot always says the same thing
-        line = digest.NAG_VOICES[once["voice"]]["nag"][3].format(
-            title="Morning pills", who="Alex", elapsed="an hour and a half", everyone="Alex", have="has")
-        self.assertEqual(once["text"], line[0].upper() + line[1:])
+        for voice, v in digest.NAG_VOICES.items():   # every line fills in, steps differ, the task isn't named
+            self.assertEqual((len(v["nag"]), len(v["escalate"])), (6, 2), voice)
+            self.assertTrue(v["done"].strip(), voice)
+            self.assertEqual(len(set(v["nag"])), 6, voice)
+            for line in v["nag"] + v["escalate"]:
+                self.assertNotIn("{title}", line)
+                self.assertNotIn("{", line.format(who="Alex", elapsed="an hour", everyone="Alex", have="has"))
+        self.assertNotIn("Plain", digest.NAG_VOICES)
+        day = lambda d: {digest.nag(t, step, step * 30, False, ["Alex"], seed=f"{t['id']}:{d}")["voice"] for step in range(6)}
+        self.assertEqual(len(day("2026-10-19")), 1)                        # one voice all day
+        self.assertGreater(len({v for d in range(1, 29) for v in day(f"2026-10-{d:02d}")}), 3)   # varies by day
+        said = digest.nag(t, 3, 90, False, ["Alex"], seed="7:2026-10-19")
+        self.assertEqual(said, digest.nag(t, 3, 90, False, ["Alex"], seed="7:2026-10-19"))
+        self.assertEqual((said["title"], said["telegram"], said["done"]),
+                         ("Morning pills", said["line"], digest.NAG_VOICES[said["voice"]]["done"]))
+        self.assertNotIn("Morning pills", said["line"])
         esc = digest.nag(t, 0, 180, True, ["Alex", "Sam"], seed="x")
-        self.assertTrue(esc["text"].startswith("⚠️ ") and "Alex and Sam" in esc["text"])
-        late = digest.nag(t, 9, 300, False, ["Alex"], seed="x")              # past the end: the last step
-        self.assertIn("5 hours", late["text"])
+        self.assertEqual(esc["title"], "⚠️ Morning pills")
+        self.assertTrue(esc["telegram"].startswith("⚠️ ") and not esc["line"].startswith("⚠️"))
+        self.assertIn("Alex and Sam", esc["line"])
+        self.assertIn("5 hours", digest.nag(t, 9, 300, False, ["Alex"], seed="x")["line"])   # past the end: the last step
         self.assertEqual([digest.elapsed_text(m) for m in (30, 60, 90, 150, 180)],
                          ["30 minutes", "an hour", "an hour and a half", "2 and a half hours", "3 hours"])
 

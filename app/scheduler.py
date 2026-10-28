@@ -233,7 +233,7 @@ class Scheduler:
     async def nag_push(self, now: datetime, force=False, dry=None, only_task=None, to=None) -> list[dict]:
         """Nagging tasks: from the due time, the assignee's phone and the Telegram group
         every nag.every minutes, each line more passive-aggressive than the last (in a
-        random house voice); from
+        house voice picked for the day); from
         nag.escalate_at, a critical push to nag.escalate_to and the group every
         nag.escalate_every minutes, until someone taps Done. Night mode holds the
         repeats but not the escalation: that is a critical alert and goes anyway."""
@@ -254,18 +254,20 @@ class Scheduler:
                 continue
             ids = t["nag"]["escalate_to"] if escalated else ([t["assignee"]] if t["assignee"] else [p.id for p in self.cfg.people])
             people = [p for p in map(self.cfg.person, ids) if p]
-            words = digest.nag(t, step, late, escalated, [p.name for p in people], seed=f"{t['id']}:{bucket}")
-            msg = words["text"]
+            # one voice per task per day, so the day's reminders all speak the same way
+            words = digest.nag(t, step, late, escalated, [p.name for p in people], seed=f"{t['id']}:{bucket[:10]}")
             send_to = to or [p.send_to for p in people] or self._target(t, self.cfg.digest_send_to)
             level = "critical" if escalated else "time-sensitive"
             occ = occurrence_key(t)
-            actions = [{"action": f"TASK_DONE_{t['id']}_{occ}", "title": "Done"}]
+            actions = [{"action": f"TASK_DONE_{t['id']}_{occ}", "title": words["done"]}]
             out.append(await self.deliver(t["id"], f"{kind}_push", bucket, "ha_push",
-                                          lambda: self.ha.notify(send_to, "", msg, level, f"task-{t['id']}", actions),
-                                          f"{msg} → {send_to}", force, dry))
+                                          lambda: self.ha.notify(send_to, words["title"], words["line"], level, f"task-{t['id']}", actions),
+                                          f"{words['title']}: {words['line']} → {send_to}", force, dry))
+            # the group gets the line alone, no task name
             out.append(await self.deliver(t["id"], f"{kind}_telegram", bucket, "telegram",
-                                          lambda: self._telegram(kind, bucket, "", msg, self._buttons(t, snooze=False), [t["id"]]),
-                                          msg, force, dry))
+                                          lambda: self._telegram(kind, bucket, "", words["telegram"],
+                                                                 self._buttons(t, snooze=False, label=words["done"]), [t["id"]]),
+                                          words["telegram"], force, dry))
         return out
 
     def roll_over(self, now: datetime) -> list[dict]:
