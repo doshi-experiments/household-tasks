@@ -39,7 +39,6 @@ class Scheduler:
         self._p0_lock = asyncio.Lock()   # the minute tick and the dog-alarm hook both run p0_push
         self._refresh_pending = False
         self.quiet_state: tuple[bool, datetime] | None = None   # (night mode on?, when read)
-        self._nag_texts: dict[tuple[int, str], str] = {}        # (task, slot) -> the line written for it
         tasks.listeners.append(self._on_change)
 
     # ------------------------------------------------------------ ledger
@@ -231,24 +230,10 @@ class Scheduler:
         slot = base + timedelta(minutes=(every or 0) * step)
         return escalated, step, slot, int((slot - start).total_seconds() // 60)
 
-    async def _nag_text(self, t: dict, key: tuple[int, str], words: dict, dry: bool) -> str:
-        """The house persona's line for this slot (asked once), else the fixed one."""
-        if key in self._nag_texts:
-            return self._nag_texts[key]
-        text = words["fallback"]
-        if self.cfg.nag_text_script and self.ha and self.ha.enabled and not dry:
-            try:
-                text = await self.ha.write_text(self.cfg.nag_text_script, words["prompt"], words["fallback"])
-            except Exception as e:
-                log.warning("nag text for task=%s failed, using the fixed line: %s", t["id"], e)
-        if len(self._nag_texts) > 200:
-            self._nag_texts.clear()
-        self._nag_texts[key] = text
-        return text
-
     async def nag_push(self, now: datetime, force=False, dry=None, only_task=None, to=None) -> list[dict]:
         """Nagging tasks: from the due time, the assignee's phone and the Telegram group
-        every nag.every minutes, each line more passive-aggressive than the last; from
+        every nag.every minutes, each line more passive-aggressive than the last (in a
+        random house voice); from
         nag.escalate_at, a critical push to nag.escalate_to and the group every
         nag.escalate_every minutes, until someone taps Done. Night mode holds the
         repeats but not the escalation: that is a critical alert and goes anyway."""
@@ -269,18 +254,18 @@ class Scheduler:
                 continue
             ids = t["nag"]["escalate_to"] if escalated else ([t["assignee"]] if t["assignee"] else [p.id for p in self.cfg.people])
             people = [p for p in map(self.cfg.person, ids) if p]
-            words = digest.nag(t, step, late, escalated, [p.name for p in people])
-            msg = await self._nag_text(t, (t["id"], f"{kind}:{bucket}"), words, dry)
+            words = digest.nag(t, step, late, escalated, [p.name for p in people], seed=f"{t['id']}:{bucket}")
+            msg = words["text"]
             send_to = to or [p.send_to for p in people] or self._target(t, self.cfg.digest_send_to)
             level = "critical" if escalated else "time-sensitive"
             occ = occurrence_key(t)
             actions = [{"action": f"TASK_DONE_{t['id']}_{occ}", "title": "Done"}]
             out.append(await self.deliver(t["id"], f"{kind}_push", bucket, "ha_push",
-                                          lambda: self.ha.notify(send_to, words["title"], msg, level, f"task-{t['id']}", actions),
-                                          f"{words['title']}: {msg} → {send_to}", force, dry))
+                                          lambda: self.ha.notify(send_to, "", msg, level, f"task-{t['id']}", actions),
+                                          f"{msg} → {send_to}", force, dry))
             out.append(await self.deliver(t["id"], f"{kind}_telegram", bucket, "telegram",
-                                          lambda: self._telegram(kind, bucket, words["title"], msg, self._buttons(t, snooze=False), [t["id"]]),
-                                          f"{words['title']}: {msg}", force, dry))
+                                          lambda: self._telegram(kind, bucket, "", msg, self._buttons(t, snooze=False), [t["id"]]),
+                                          msg, force, dry))
         return out
 
     def roll_over(self, now: datetime) -> list[dict]:

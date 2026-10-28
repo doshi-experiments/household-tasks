@@ -369,8 +369,11 @@ def create_app(cfg=None, store=None, clock=None, start_scheduler=True):
     # ------------------------------------------------------------ calendar and pages
     @app.get("/calendar.ics")
     def calendar():
+        """HA's summary calendar, which its spoken briefings and summaries read out;
+        nagging tasks stay off it, since they have reminders of their own."""
         today = tasks.today()
-        body = ics.render(tasks.projected(today, today + timedelta(days=cfg.calendar_days_ahead)), tasks.now(), cfg.tz)
+        proj = [p for p in tasks.projected(today, today + timedelta(days=cfg.calendar_days_ahead)) if not p["task"]["nag"]]
+        body = ics.render(proj, tasks.now(), cfg.tz)
         return Response(body, media_type="text/calendar; charset=utf-8")
 
     @app.get("/calendar-reminders.ics")

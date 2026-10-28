@@ -396,7 +396,7 @@ class Nagging(Base):
         s.quiet_state = (True, self.clock())
         self.assertEqual(self.push(s, 10, 0), [])                         # night mode holds the repeats
         esc = self.push(s, 12, 0)                                          # ...but not the escalation
-        self.assertTrue(esc and esc[0]["summary"].startswith("⚠️ Morning pills"))
+        self.assertTrue(esc and esc[0]["summary"].startswith("⚠️ "))
         self.assertIn("['notify_alex', 'notify_sam']", esc[0]["summary"])
         self.assertEqual(self.push(s, 12, 30), [])
         self.assertEqual(len(self.push(s, 13, 0)), 2)
@@ -416,22 +416,47 @@ class Nagging(Base):
         again = self.push(s, 9, 0, date(2026, 10, 20))
         self.assertTrue(again and not again[0]["summary"].startswith("⚠️"))   # a fresh, friendly start
 
-    def test_wording_gets_snippier_and_stays_off_other_reminders(self):
+    def test_wording_gets_snippier_in_a_random_house_voice(self):
         t = self.tasks.get(self.t["id"])
-        lines = [digest.nag(t, i, i * 30, False, ["Alex"])["fallback"] for i in range(6)]
-        self.assertEqual(len(set(lines)), 6)
-        self.assertTrue(all("Morning pills" in l for l in lines[1:]))
-        esc = digest.nag(t, 0, 180, True, ["Alex", "Sam"])
-        self.assertIn("Alex and Sam have been looped in", esc["fallback"])
-        self.assertIn("Sam", esc["prompt"])
+        for voice, ladder in digest.NAG_VOICES.items():   # every line fills in, and each step differs
+            self.assertEqual((len(ladder["nag"]), len(ladder["escalate"])), (6, 2), voice)
+            for line in ladder["nag"] + ladder["escalate"]:
+                filled = line.format(title="Morning pills", who="Alex", elapsed="an hour", everyone="Alex", have="has")
+                self.assertNotIn("{", filled)
+                self.assertIn("Morning pills", filled)                         # no heading, so the line names the task
+            self.assertEqual(len({line for line in ladder["nag"]}), 6, voice)
+        seen = {digest.nag(t, 3, 90, False, ["Alex"], seed=f"{t['id']}:{slot}")["voice"]
+                for slot in range(40)}
+        self.assertGreater(len(seen), 3)                                    # voices vary from reminder to reminder
+        once, again = (digest.nag(t, 3, 90, False, ["Alex"], seed="7:2026-10-19T10:30") for _ in range(2))
+        self.assertEqual(once, again)                                       # a slot always says the same thing
+        line = digest.NAG_VOICES[once["voice"]]["nag"][3].format(
+            title="Morning pills", who="Alex", elapsed="an hour and a half", everyone="Alex", have="has")
+        self.assertEqual(once["text"], line[0].upper() + line[1:])
+        esc = digest.nag(t, 0, 180, True, ["Alex", "Sam"], seed="x")
+        self.assertTrue(esc["text"].startswith("⚠️ ") and "Alex and Sam" in esc["text"])
+        late = digest.nag(t, 9, 300, False, ["Alex"], seed="x")              # past the end: the last step
+        self.assertIn("5 hours", late["text"])
         self.assertEqual([digest.elapsed_text(m) for m in (30, 60, 90, 150, 180)],
                          ["30 minutes", "an hour", "an hour and a half", "2 and a half hours", "3 hours"])
-        self.assertNotIn(t["id"], digest.dog_alarm(self.tasks.open_tasks(), first_today=True)["due_today"])
+
+    def test_kept_out_of_summaries_calendars_and_speech(self):
+        plain = self.tasks.create({"title": "Water plants", "due": "2026-10-19",
+                                   "schedule": {"kind": "rrule", "rrule": "FREQ=DAILY", "due_time": "09:00"}})
+        self.at(8, 0)
+        open_tasks = self.tasks.open_tasks()
+        for kind in ("morning", "evening"):
+            listed = [t["id"] for _, rows in digest.sections(open_tasks, self.clock().date(), kind) for t in rows]
+            self.assertIn(plain["id"], listed)
+            self.assertNotIn(self.t["id"], listed)
+        self.assertNotIn(self.t["id"], digest.dog_alarm(open_tasks, first_today=True)["due_today"])
         from fastapi.testclient import TestClient
         from app.web import create_app
         app = create_app(cfg=self.cfg, store=self.store, clock=self.clock, start_scheduler=False)
         with TestClient(app) as c:
-            self.assertNotIn("Morning pills", c.get("/calendar-reminders.ics").text)
+            for feed in ("/calendar.ics", "/calendar-reminders.ics"):
+                self.assertNotIn("Morning pills", c.get(feed).text, feed)
+            self.assertIn("Water plants", c.get("/calendar.ics").text)
 
 
 class ShoppingBehaviour(Base):

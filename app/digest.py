@@ -5,6 +5,7 @@ Alarms → Overdue → Today → Tomorrow (evening only) → This weekend (Thu-S
 """
 from __future__ import annotations
 
+import random
 from datetime import date, timedelta
 
 from . import schedule as sch
@@ -26,7 +27,8 @@ def _meta(t: dict, today: date, show_person: bool = True) -> str:
 
 
 def sections(tasks: list[dict], today: date, kind: str) -> list[tuple[str, list[dict]]]:
-    seen, out = set(), []
+    # a nagging task has its own reminders, so the summaries leave it out
+    seen, out = {t["id"] for t in tasks if t["nag"]}, []
 
     def take(title, pred):
         rows = [t for t in tasks if t["id"] not in seen and pred(t)]
@@ -159,35 +161,110 @@ def day_label(d: date, today: date) -> str:
 
 
 # ------------------------------------------------------------ nagging
-# Each repeat of a nagging task's reminder is a step more passive-aggressive.
-# HA's house persona writes the line when it can (NAG_TEXT_SCRIPT); these are
-# what it is asked for, and the fixed lines used when it can't answer.
-NAG_TONES = [
-    "Warm and friendly: a light nudge.",
-    "Cheerful, with a hint of teasing.",
-    "Mildly passive-aggressive, like a polite office email that is 'just circling back'.",
-    "Openly passive-aggressive ('as per my last reminder'), with an audible sigh.",
-    "Exasperated and sarcastic, keeping score of how many reminders this has taken.",
-    "Theatrically disappointed, laying on the guilt.",
-]
-ESCALATION_TONES = [
-    "An official escalation: announce, smugly, that {others} {have} now been brought in, "
-    "and that everyone will hear about it every hour until it's done.",
-    "Full melodrama and maximum passive aggression, as if this were the greatest betrayal "
-    "in household history, while staying affectionate.",
-]
-NAG_FALLBACK = [
-    "Due now. Tap Done once it's done.",
-    "Friendly reminder: {title}. Still waiting on that Done.",
-    "Just circling back on {title}. No pressure. Some pressure.",
-    "As per my last reminder: {title}. The Done button is right there.",
-    "{title}, still. That's {elapsed}. The Done button misses you.",
-    "Not to be dramatic, but {title} has now been ignored for {elapsed}.",
-]
-ESCALATION_FALLBACK = [
-    "{title} still isn't done after {elapsed}, so {everyone} {have} been looped in. Whoever taps Done first wins.",
-    "{elapsed} of {title} not being done. {everyone}, this is your sign. Tap Done.",
-]
+# Each repeat of a nagging task's reminder is a step more passive-aggressive, in
+# a house voice picked at random for each reminder. Fixed lines: {title}, {who}
+# (the assignee, or everyone), {elapsed} since it was due, and for escalations
+# {everyone} who gets it and {have}.
+NAG_VOICES = {
+    "Plain": {
+        "nag": [
+            "{title} is due now. Tap Done once it's done.",
+            "Friendly reminder: {title}. Still waiting on that Done.",
+            "Just circling back on {title}. No pressure. Some pressure. Tap Done.",
+            "As per my last reminder: {title}. The Done button is right there.",
+            "{title}, still. That's {elapsed}. The Done button misses you.",
+            "Not to be dramatic, but {title} has now been ignored for {elapsed}. Tap Done.",
+        ],
+        "escalate": [
+            "{title} still isn't done after {elapsed}, so {everyone} {have} been looped in. Whoever taps Done first wins.",
+            "{elapsed} of {title} not being done. {everyone}, this is your sign. Tap Done.",
+        ],
+    },
+    "Gen Z": {
+        "nag": [
+            "{who}, it's {title} o'clock. Tap Done, bestie.",
+            "Not to be that person, but {title}? Still pending. Tap Done, it's giving responsible.",
+            "{title} has been left on read for {elapsed}. The Done button is literally right there.",
+            "Bestie. {title}. {elapsed}. I'm not mad, I'm just noticing. Tap Done.",
+            "It's been {elapsed} and {title} is still undone. Respectfully: tap Done, no cap.",
+            "{elapsed} of ignoring {title}? The audacity. The lore. Just tap Done, I'm begging.",
+        ],
+        "escalate": [
+            "{title} has been ghosted for {elapsed}, so {everyone} {have} been added to the group chat of shame. Tap Done.",
+            "{elapsed} and still no {title}. {everyone}, this is a whole situation now. Someone tap Done, fr.",
+        ],
+    },
+    "Shakespearean": {
+        "nag": [
+            "Hark, {who}! The hour of {title} is upon thee. Tap Done, I prithee.",
+            "Good {who}, {title} doth linger yet. A gentle tap on Done would please me well.",
+            "{elapsed} hath passed, and {title} still waits like a maiden at the window. Tap Done.",
+            "As I didst say before, and say again: {title}. The Done button weeps. Tap it.",
+            "{elapsed}! Is this neglect, or merely villainy? {title} cries out. Tap Done.",
+            "Et tu, {who}? {title}, forsaken for {elapsed}. Tap Done and end this tragedy.",
+        ],
+        "escalate": [
+            "Alas! {title} unheeded for {elapsed}, so {everyone} {have} been summoned to court. Whoever taps Done shall be knighted.",
+            "{elapsed} of {title} undone! A plague upon this house, unless {everyone} tap Done forthwith.",
+        ],
+    },
+    "Pirate": {
+        "nag": [
+            "Ahoy, {who}! {title} be due. Tap Done, matey.",
+            "Arr, {title} still be waitin' on deck. Tap Done, if ye please.",
+            "{elapsed} at sea and no {title} yet. Just checkin' in, savvy? Tap Done.",
+            "As I bellowed before: {title}! The Done button be right there, ye scallywag.",
+            "{elapsed} adrift and still no {title}. The crew be whisperin'. Tap Done.",
+            "Shiver me timbers, {elapsed} of ignorin' {title}. Even the parrot be disappointed. Tap Done.",
+        ],
+        "escalate": [
+            "Mutiny! {title} ignored for {elapsed}, so {everyone} {have} been piped aboard. First to tap Done gets the treasure.",
+            "{elapsed} without {title}! All hands, {everyone}: tap Done or walk the plank.",
+        ],
+    },
+    "Mad scientist": {
+        "nag": [
+            "The experiment begins! {who}, {title} is due. Tap Done to record the result.",
+            "Observation: {title} remains incomplete. Fascinating. Tap Done, please.",
+            "{elapsed} into the trial and {title} is still pending. My notes grow concerned. Tap Done.",
+            "As my previous findings stated: {title}. The Done button. Press it. For science.",
+            "{elapsed}! The data suggests deliberate avoidance of {title}. Tap Done before I publish.",
+            "{elapsed} of {title} ignored. My lab assistant has fainted. Tap Done, I implore you!",
+        ],
+        "escalate": [
+            "Containment breach! {title} unattended for {elapsed}, so {everyone} {have} been called to the lab. Whoever taps Done saves the experiment.",
+            "{elapsed} of {title} undone! The reactor of disappointment is going critical. {everyone}, tap Done!",
+        ],
+    },
+    "NYC cabbie": {
+        "nag": [
+            "Hey {who}, {title}, it's time. Tap Done, I got places to be.",
+            "Still waitin' on {title} here. Meter's runnin'. Tap Done.",
+            "{elapsed} I'm idlin' outside for {title}. Just sayin'. Tap Done.",
+            "Like I said before, pal: {title}. Done button. You know where it is.",
+            "{elapsed}! I've seen bridges built faster than {title}. Tap Done already.",
+            "{elapsed} for {title}? I drove to Jersey and back. Twice. Tap Done, would ya?",
+        ],
+        "escalate": [
+            "Alright, {title}'s been sittin' there {elapsed}, so I called in {everyone}. Whoever taps Done first gets the tip.",
+            "{elapsed} of {title}, unbelievable. {everyone}, tap Done before I start honkin'.",
+        ],
+    },
+    "Robot": {
+        "nag": [
+            "Reminder: {title} is due. Awaiting Done.",
+            "Status check: {title} incomplete. Please tap Done. Thank you for your cooperation.",
+            "Following up on {title}. Elapsed: {elapsed}. Compliance appreciated. Tap Done.",
+            "Per previous transmission: {title}. Done button located. Awaiting input.",
+            "{elapsed} without {title}. Patience subroutine at 12 percent. Tap Done.",
+            "{elapsed}. {title}. Still. Disappointment module fully engaged. Tap Done.",
+        ],
+        "escalate": [
+            "Escalation protocol initiated: {title} incomplete for {elapsed}. {everyone} {have} been notified. First to tap Done wins.",
+            "{elapsed} of {title} undone. This alert will repeat. {everyone}: tap Done. This unit is not angry. This unit is disappointed.",
+        ],
+    },
+}
 
 
 def _names(names: list[str]) -> str:
@@ -205,29 +282,15 @@ def elapsed_text(minutes: int) -> str:
     return f"{h}{half} hours"
 
 
-def nag(t: dict, step: int, minutes_late: int, escalated: bool, people: list[str]) -> dict:
-    """The reminder for one step of a nagging task: {title, fallback, prompt}.
+def nag(t: dict, step: int, minutes_late: int, escalated: bool, people: list[str], seed: str = "") -> dict:
+    """The reminder for one step of a nagging task: {text, voice}. There's no
+    heading: every line names the task, and an escalation starts with ⚠️.
     step counts from 0 at the due time; escalated steps count from 0 again.
-    people: who gets this one (names)."""
-    who = t["assignee_name"] or "everyone"
-    others = [n for n in people if n != t["assignee_name"]]
-    fill = {"title": t["title"], "elapsed": elapsed_text(minutes_late), "everyone": _names(people),
-            "have": "has" if len(people) == 1 else "have"}
-    if escalated:
-        line = ESCALATION_FALLBACK[min(step, len(ESCALATION_FALLBACK) - 1)]
-        tone = ESCALATION_TONES[min(step, len(ESCALATION_TONES) - 1)].format(
-            others=_names(others), have="has" if len(others) == 1 else "have")
-        title = f"⚠️ {t['title']}"
-    else:
-        line = NAG_FALLBACK[min(step, len(NAG_FALLBACK) - 1)]
-        tone = NAG_TONES[min(step, len(NAG_TONES) - 1)]
-        title = t["title"]
-    fallback = line.format(**fill)
-    fallback = fallback[0].upper() + fallback[1:]
-    at = f" at {t['schedule']['due_time']}" if t["schedule"]["due_time"] else ""
-    late = f" It was due{at}, {fill['elapsed']} ago." if minutes_late else " It's due now."
-    prompt = (f"Write a phone notification reminding {who} to do this task: {t['title']}.{late}"
-              + (f" This goes to {_names(people)}." if escalated else "")
-              + f" Tone: {tone} Playful, never mean, no swearing, and don't invent details about the task."
-              " One or two short sentences, at most 35 words. Name the task and end by telling them to tap Done.")
-    return {"title": title, "fallback": fallback, "prompt": prompt}
+    people: who gets this one (names). seed picks the voice, so the same slot
+    always says the same thing."""
+    voice = random.Random(seed).choice(sorted(NAG_VOICES))
+    lines = NAG_VOICES[voice]["escalate" if escalated else "nag"]
+    text = lines[min(step, len(lines) - 1)].format(
+        title=t["title"], who=t["assignee_name"] or "everyone", elapsed=elapsed_text(minutes_late),
+        everyone=_names(people), have="has" if len(people) == 1 else "have")
+    return {"text": ("⚠️ " if escalated else "") + text[0].upper() + text[1:], "voice": voice}

@@ -28,7 +28,7 @@ export function NagBuilder({value, onChange, dueTime, assignee, people}) {
     <div className="tasks-stack-tight">
       <CheckboxField label="Repeat the reminder until it’s done" checked={!!value}
         onCheckedChange={on => onChange(on ? {every:30, escalate_at:'', escalate_every:60, escalate_to:[]} : null)}
-        hint={`On the day it’s due, from ${clock(start)}: a push to ${who} and a message in the Telegram group, each a little snippier than the last, until someone taps Done. Waits while night mode is on.`}/>
+        hint={`On the day it’s due, from ${clock(start)}: a push to ${who} and a message in the Telegram group, each a little snippier than the last, until someone taps Done. Waits while night mode is on. Not in the summaries or read out.`}/>
       {value && <>
         <div className="tasks-inline">
           <Select label="How often" value={String(value.every || '')} onValueChange={v => set({every:Number(v) || null})}

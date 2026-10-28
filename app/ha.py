@@ -70,14 +70,6 @@ class HomeAssistant:
                            {"action_type": "clear", "send_to": send_to if isinstance(send_to, list) else [send_to],
                             "tag": tag, "message": "clear_notification"})
 
-    async def write_text(self, script: str, prompt: str, fallback: str) -> str:
-        """Ask an HA script (prompt, fallback_text -> {text}) for a line in the house's voice."""
-        domain, _, name = script.partition(".")
-        resp = await self._call("POST", f"/api/services/{domain}/{name}?return_response",
-                                json={"prompt": prompt, "fallback_text": fallback}, timeout=60)
-        text = (((resp or {}).get("service_response") or {}).get("text") or "").strip()
-        return text or fallback
-
     async def announce(self, text: str, verbatim: bool):
         await self.service("script", "tasks_announce", {"text": text, "verbatim": verbatim})
 
