@@ -292,16 +292,18 @@ def create_app(cfg=None, store=None, clock=None, start_scheduler=True):
         open_tasks = tasks.open_tasks()
         if kind == "dog_alarm":
             first = not sched.sent(0, "dog_alarm_digest", today.isoformat(), "spoken")
-            return digest.dog_alarm(open_tasks, first)
+            return digest.dog_alarm(open_tasks, first, sched.voice(tasks.now()))
         if kind == "p0":
-            return {"pushes": [dict(zip(("title", "message"), digest.p0_push(t, today))) for t in open_tasks
+            v = sched.voice(tasks.now())
+            return {"pushes": [dict(zip(("title", "message"), digest.p0_push(t, today, v))) for t in open_tasks
                                if t["alarm"] and t["state"] in ("due", "overdue")]}
         if kind not in ("morning", "evening"):
             raise TaskError(400, "kind is morning, evening, dog_alarm or p0.")
         secs = digest.sections(open_tasks, today, kind)
-        head, body = digest.render(secs, today, kind)
+        v = sched.voice(tasks.now())
+        head, body = digest.render(secs, today, kind, voice=v)
         return {"title": head, "text": body,
-                "per_person": {p.id: digest.render(secs, today, kind, p.id)[1] for p in cfg.people},
+                "per_person": {p.id: digest.render(secs, today, kind, p.id, voice=v)[1] for p in cfg.people},
                 "sections": [{"title": t, "task_ids": [x["id"] for x in rows]} for t, rows in secs]}
 
     @app.post("/api/admin/run")
@@ -359,7 +361,7 @@ def create_app(cfg=None, store=None, clock=None, start_scheduler=True):
         if sched.loop:
             asyncio.run_coroutine_threadsafe(sched.p0_push(tasks.now()), sched.loop)
         first = not sched.sent(0, "dog_alarm_digest", today, "spoken")
-        said = digest.dog_alarm(tasks.open_tasks(), first)
+        said = digest.dog_alarm(tasks.open_tasks(), first, sched.voice(tasks.now()))
         if first and said["due_today"]:
             sched.record(0, "dog_alarm_digest", today, "spoken", True, said["text"][:400])
         if said["p0"]:

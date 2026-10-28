@@ -51,6 +51,9 @@ class Config:
     # Origins allowed to show the app in a frame (Home Assistant's addresses); none = never framed.
     frame_ancestors: tuple[str, ...] = ()
     calendar_days_ahead: int = 90
+    # HA's persona script (script.era_generate_text, with custom_era) that writes
+    # one-off tasks' reminder lines each morning. Blank = fixed lines for all.
+    voice_text_script: str = ""
     log_level: str = "INFO"
 
     @property
@@ -111,6 +114,7 @@ def load() -> Config:
         p1_overdue_push_time=e("P1_OVERDUE_PUSH_TIME", "18:00"),
         calendar_days_ahead=int(e("CALENDAR_DAYS_AHEAD", "90") or 90),
         frame_ancestors=tuple(e("FRAME_ANCESTORS").replace(",", " ").split()),
+        voice_text_script=e("VOICE_TEXT_SCRIPT"),
         log_level=e("LOG_LEVEL", "INFO").upper(),
     )
     problems = []

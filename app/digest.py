@@ -5,10 +5,10 @@ Alarms → Overdue → Today → Tomorrow (evening only) → This weekend (Thu-S
 """
 from __future__ import annotations
 
-import random
 from datetime import date, timedelta
 
 from . import schedule as sch
+from . import voices
 from .tasks import weekend_window
 
 
@@ -56,9 +56,11 @@ def order_for(person_id: str | None, rows: list[dict]) -> list[dict]:
     return sorted(rows, key=rank)
 
 
-def render(secs: list[tuple[str, list[dict]]], today: date, kind: str, person_id: str | None = None) -> tuple[str, str]:
-    """(title, body) for a digest; body is empty when there's nothing to say."""
-    lead = "Good morning" if kind == "morning" else "This evening"
+def render(secs: list[tuple[str, list[dict]]], today: date, kind: str, person_id: str | None = None,
+           voice: voices.Today | None = None) -> tuple[str, str]:
+    """(title, body) for a digest; body is empty when there's nothing to say.
+    The title is the day's voice opening the summary."""
+    voice = voice or voices.Today(today)
     total = sum(len(rows) for _, rows in secs)
     if not total:
         return "", ""
@@ -67,18 +69,15 @@ def render(secs: list[tuple[str, list[dict]]], today: date, kind: str, person_id
         lines.append(f"{title}:")
         for t in order_for(person_id, rows):
             lines.append(f"• {t['title']}{_meta(t, today)}")
-    head = f"{lead}: {total} task{'s' if total != 1 else ''}"
-    return head, "\n".join(lines)
+    return voice.head(kind, total), "\n".join(lines)
 
 
-def p0_push(t: dict, today: date) -> tuple[str, str]:
-    title = f"⚠️ {t['title']}"
-    if t["overdue"]:
-        n = t["days_overdue"]
-        msg = f"Was due {n} day{'s' if n != 1 else ''} ago. Tap Done once it's done."
-    else:
-        msg = "Due today" + (f" at {t['schedule']['due_time']}" if t["schedule"]["due_time"] else "") + ". Tap Done once it's done."
-    return title, msg
+def p0_push(t: dict, today: date, voice: voices.Today | None = None) -> tuple[str, str]:
+    """(phone title, line) for an alarm task: the line names the task and is all
+    the Telegram group gets."""
+    voice = voice or voices.Today(today)
+    n = t["days_overdue"] if t["overdue"] else 0
+    return f"⚠️ {t['title']}", voice.line(t, "alarm", voices.alarm_step(n), late=voices.late_text(n))
 
 
 CLOSED_VIA = {"web": "in the app", "ha_push": "from a phone notification", "switch": "with the switch",
@@ -103,9 +102,9 @@ def closed_line(event: str, t: dict) -> str:
     return head + (f" — {who}" if who else "")
 
 
-def p1_overdue_push(t: dict) -> tuple[str, str]:
+def p1_overdue_push(t: dict, voice: voices.Today) -> tuple[str, str]:
     n = t["days_overdue"]
-    return f"Overdue: {t['title']}", f"{n} day{'s' if n != 1 else ''} overdue (high priority). Snooze it if it can wait."
+    return f"Overdue: {t['title']}", voice.line(t, "overdue", voices.overdue_step(n), late=voices.late_text(n))
 
 
 def _spoken_list(titles: list[str]) -> str:
@@ -114,17 +113,14 @@ def _spoken_list(titles: list[str]) -> str:
     return ", ".join(titles[:-1]) + " and " + titles[-1]
 
 
-def p0_spoken(t: dict) -> str:
-    if t["overdue"]:
-        n = t["days_overdue"]
-        when = f"was due {n} day{'s' if n != 1 else ''} ago"
-    else:
-        when = "is due today"
-    return f"Reminder: {t['title']} {when}. Tap Done in the notification once it's done."
+def p0_spoken(t: dict, voice: voices.Today) -> str:
+    n = t["days_overdue"] if t["overdue"] else 0
+    return voice.line(t, "spoken", 1 if n else 0, late=voices.late_text(n))
 
 
-def dog_alarm(tasks: list[dict], first_today: bool) -> dict:
-    """What the feed-dogs reminder should append to its speech."""
+def dog_alarm(tasks: list[dict], first_today: bool, voice: voices.Today) -> dict:
+    """What the feed-dogs reminder should append to its speech; alarm lines
+    in the day's voice."""
     p0 = [t for t in tasks if t["alarm"] and t["state"] in ("due", "overdue")]
     # a nagging task has its own reminders, so it isn't read out with the feeding
     rest = [t for t in tasks if not t["alarm"] and not t["nag"] and t["state"] in ("due", "overdue")]
@@ -136,7 +132,7 @@ def dog_alarm(tasks: list[dict], first_today: bool) -> dict:
             parts.append(f"Also for today: {_spoken_list(today_titles)}.")
         if overdue_titles:
             parts.append(f"Overdue: {_spoken_list(overdue_titles)}.")
-    parts += [p0_spoken(t) for t in p0]
+    parts += [p0_spoken(t, voice) for t in p0]
     return {"text": " ".join(parts), "verbatim": bool(p0), "first_today": first_today,
             "p0": [t["id"] for t in p0], "due_today": [t["id"] for t in rest] if first_today else []}
 
@@ -162,103 +158,8 @@ def day_label(d: date, today: date) -> str:
 
 # ------------------------------------------------------------ nagging
 # Each repeat of a nagging task's reminder is a step more passive-aggressive, in
-# one house voice for the whole day. The lines don't name the task (the phone
-# push carries it as its title; the Telegram group gets the line alone), and
-# the Done button speaks in the same voice. Placeholders: {who} (the assignee,
-# or everyone), {elapsed} since it was due, and for escalations {everyone} who
-# gets it and {have}.
-NAG_VOICES = {
-    "Gen Z": {
-        "done": "Ate. Done 💅",
-        "nag": [
-            "{who}, it's time 💅 Do the thing and go be iconic.",
-            "It's still just sitting there. Not a vibe, bestie.",
-            "Not me checking in again after {elapsed}. Lowkey begging rn.",
-            "Again?? I said what I said. It's literally one button.",
-            "{elapsed} of leaving it on read. The disrespect is giving.",
-            "{elapsed} and it's still not done. I need everyone to act normal. 😭",
-        ],
-        "escalate": [
-            "Okay so this got ghosted for {elapsed}, so I added {everyone} to the chat. This is an intervention.",
-            "{elapsed}. Still. {everyone}, this is giving main-character neglect. Someone tap it, fr fr.",
-        ],
-    },
-    "Shakespearean": {
-        "done": "'Tis done, forsooth",
-        "nag": [
-            "Hark, {who}! The appointed hour is come. Do the deed, and be thou blessed.",
-            "Good {who}, doth it slip thy mind? One gentle tap would mend all.",
-            "{elapsed} hath crept by on silent feet, and still it waits. I but inquire.",
-            "Once more unto the breach, dear {who}! Methinks the button doth protest too little.",
-            "{elapsed}! Is this neglect, or some deeper villainy? Justice cries out.",
-            "Forsaken {elapsed}. Et tu, {who}? End this tragedy in one act.",
-        ],
-        "escalate": [
-            "Alas! Unheeded {elapsed}, so I have summon'd {everyone} to court. Whoso tappeth first shall be knighted.",
-            "{elapsed}! A plague upon this house! {everyone}, the fate of this deed rests with thee. Tap, ere I weep.",
-        ],
-    },
-    "Pirate": {
-        "done": "Aye, 'tis done ⚓",
-        "nag": [
-            "Ahoy, {who}! 'Tis time. Do the deed an' earn yer grog.",
-            "Arr, it still be sittin' on deck, matey.",
-            "{elapsed} at sea an' nary a sign of it. Just askin', savvy?",
-            "As I bellowed afore! The button be right there, ye barnacle.",
-            "{elapsed} adrift. The crew be whisperin' mutiny.",
-            "{elapsed}! Even the parrot be ashamed o' ye, scallywag.",
-        ],
-        "escalate": [
-            "All hands! Ignored for {elapsed}, so I've piped {everyone} aboard. First to tap gets the treasure.",
-            "{elapsed} an' still undone! {everyone}, tap it or the lot o' ye walk the plank.",
-        ],
-    },
-    "Mad scientist": {
-        "done": "Eureka! Done 🧪",
-        "nag": [
-            "The experiment begins! Subject {who}, it is time. Record the result. Mwahaha.",
-            "Observation: still incomplete. Fascinating. Proceed, for science.",
-            "{elapsed} into the trial and no result. My notes grow concerned.",
-            "Hypothesis: you saw my last reminder. Conclusion: press the button.",
-            "{elapsed}! The data suggests deliberate avoidance. Press it before I publish.",
-            "{elapsed} of silence. My assistant has fainted. The beakers weep. PRESS. IT.",
-        ],
-        "escalate": [
-            "Containment breach! Unattended for {elapsed}, so I've summoned {everyone} to the lab. Whoever presses first saves the experiment.",
-            "{elapsed}! The reactor of disappointment is going critical. {everyone}, press it before it blows!",
-        ],
-    },
-    "NYC cabbie": {
-        "done": "Yeah yeah, done 🚕",
-        "nag": [
-            "Yo {who}, it's time. Now's good. I got places to be.",
-            "Still waitin' here. Meter's runnin', buddy.",
-            "{elapsed} I'm idlin' out front. Just sayin'.",
-            "Whaddya want, a written invitation? Button. Go.",
-            "{elapsed}! I've seen the BQE move faster than this.",
-            "{elapsed}? I drove to Jersey and back. Twice. Would ya tap the thing?",
-        ],
-        "escalate": [
-            "Alright, it's been sittin' there {elapsed}, so I called in {everyone}. First one to tap gets the tip.",
-            "{elapsed}. Unbelievable. {everyone}, tap it before I lean on this horn.",
-        ],
-    },
-    "Robot": {
-        "done": "TASK COMPLETE 🤖",
-        "nag": [
-            "BEEP. Scheduled task is due, {who}. Awaiting confirmation. Have a nice day.",
-            "Status check: task incomplete. Please confirm. Thank you for your cooperation.",
-            "Following up. Elapsed: {elapsed}. Compliance would be appreciated.",
-            "Per previous transmission: button located. Awaiting input. Still awaiting input.",
-            "{elapsed} without confirmation. Patience subroutine at 12%.",
-            "{elapsed}. Still. Disappointment module fully engaged. This unit is fine.",
-        ],
-        "escalate": [
-            "Escalation protocol initiated: task incomplete for {elapsed}. {everyone} {have} been notified. First to confirm wins.",
-            "{elapsed} undone. This unit is not angry. This unit is disappointed. {everyone}: confirm.",
-        ],
-    },
-}
+# the day's voice (voices.VOICES). The lines don't name the task: the phone push
+# carries it as its title and the Telegram group gets the line alone.
 
 
 def _names(names: list[str]) -> str:
@@ -276,19 +177,14 @@ def elapsed_text(minutes: int) -> str:
     return f"{h}{half} hours"
 
 
-def nag(t: dict, step: int, minutes_late: int, escalated: bool, people: list[str], seed: str = "") -> dict:
+def nag(t: dict, step: int, minutes_late: int, escalated: bool, people: list[str], voice: voices.Today) -> dict:
     """The reminder for one step of a nagging task: {title, line, telegram, done, voice}.
-    title: the phone push's heading (the task, ⚠️ first when escalated) over line,
-    the voiced text; telegram: all the group gets, the line alone (⚠️ first when
-    escalated); done: the Done button's label in the same voice.
-    step counts from 0 at the due time; escalated steps count from 0 again.
-    people: who gets this one (names). seed picks the voice: one per task per
-    day, so a day's reminders all speak the same way."""
-    voice = random.Random(seed).choice(sorted(NAG_VOICES))
-    v = NAG_VOICES[voice]
-    lines = v["escalate" if escalated else "nag"]
-    text = lines[min(step, len(lines) - 1)].format(
-        who=t["assignee_name"] or "everyone", elapsed=elapsed_text(minutes_late),
-        everyone=_names(people), have="has" if len(people) == 1 else "have")
-    warn, line = "⚠️ " if escalated else "", text[0].upper() + text[1:]
-    return {"title": warn + t["title"], "line": line, "telegram": warn + line, "done": v["done"], "voice": voice}
+    title: the phone push's heading (the task, ⚠️ first when escalated) over line;
+    telegram: all the group gets, the line alone (⚠️ first when escalated); done:
+    the Done button's label in the day's voice. step counts from 0 at the due time;
+    escalated steps count from 0 again. people: who gets this one (names)."""
+    line = voice.line(t, "escalate" if escalated else "nag", step,
+                      who=t["assignee_name"] or "everyone", elapsed=elapsed_text(minutes_late),
+                      everyone=_names(people), have="has" if len(people) == 1 else "have")
+    warn = "⚠️ " if escalated else ""
+    return {"title": warn + t["title"], "line": line, "telegram": warn + line, "done": voice.done, "voice": voice.name}

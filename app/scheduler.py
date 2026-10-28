@@ -16,7 +16,7 @@ import json
 import logging
 from datetime import datetime, timedelta
 
-from . import digest
+from . import digest, voices
 from .bot import Bot
 from .config import Config
 from .ha import HomeAssistant
@@ -129,12 +129,16 @@ class Scheduler:
         p = self.cfg.person(t["assignee"])
         return p.send_to if p else default
 
-    def _buttons(self, t: dict, snooze: bool = True, label: str = "Done") -> list[dict]:
+    def _buttons(self, t: dict, snooze: bool = True, label: str = "Done", snooze_label: str = "Snooze a day") -> list[dict]:
         occ = occurrence_key(t)
         out = [{"task_id": t["id"], "occurrence": occ, "label": label, "op": "done"}]
         if snooze:
-            out.append({"task_id": t["id"], "occurrence": occ, "label": "Snooze a day", "op": "snooze"})
+            out.append({"task_id": t["id"], "occurrence": occ, "label": snooze_label, "op": "snooze"})
         return out
+
+    def voice(self, now: datetime) -> voices.Today:
+        """The house's voice today, with one-off tasks' stored lines."""
+        return voices.Today(now.date(), self.store)
 
     def _switch_entity(self, t: dict) -> str | None:
         return next((e for e, src in self.cfg.switch_tasks.items() if src == t["source"]), None)
@@ -197,17 +201,19 @@ class Scheduler:
             if not force and not (self.announcement_due(now) if self.with_announcement(t)
                                   else self._due_slot(now, t["schedule"]["due_time"], whole_day=True)):
                 continue
-            title, msg = digest.p0_push(t, now.date())
+            v = self.voice(now)
+            title, msg = digest.p0_push(t, now.date(), v)
             send_to = to or self._target(t, self.cfg.p0_send_to)
             occ = occurrence_key(t)
-            actions = [{"action": f"TASK_DONE_{t['id']}_{occ}", "title": "Done"},
-                       {"action": f"TASK_SNOOZE_{t['id']}_{occ}", "title": "Snooze a day"}]
+            actions = [{"action": f"TASK_DONE_{t['id']}_{occ}", "title": v.done},
+                       {"action": f"TASK_SNOOZE_{t['id']}_{occ}", "title": v.snooze}]
             out.append(await self.deliver(t["id"], "p0_push", today, "ha_push",
                                           lambda: self.ha.notify(send_to, title, msg, "critical", f"task-{t['id']}", actions),
                                           f"{title}: {msg} → {send_to}", force, dry))
             out.append(await self.deliver(t["id"], "p0_telegram", today, "telegram",
-                                          lambda: self._telegram("p0", today, title, msg, self._buttons(t), [t["id"]]),
-                                          f"{title}: {msg}", force, dry))
+                                          lambda: self._telegram("p0", today, "", msg, self._buttons(t, label=v.done, snooze_label=v.snooze),
+                                                                 [t["id"]]),
+                                          msg, force, dry))
             if entity := self._switch_entity(t):
                 out.append(await self.deliver(t["id"], "switch_on", today, "ha_switch",
                                               lambda: self.ha.set_switch(entity, True), f"{entity} on", force, dry))
@@ -254,8 +260,7 @@ class Scheduler:
                 continue
             ids = t["nag"]["escalate_to"] if escalated else ([t["assignee"]] if t["assignee"] else [p.id for p in self.cfg.people])
             people = [p for p in map(self.cfg.person, ids) if p]
-            # one voice per task per day, so the day's reminders all speak the same way
-            words = digest.nag(t, step, late, escalated, [p.name for p in people], seed=f"{t['id']}:{bucket[:10]}")
+            words = digest.nag(t, step, late, escalated, [p.name for p in people], self.voice(now))
             send_to = to or [p.send_to for p in people] or self._target(t, self.cfg.digest_send_to)
             level = "critical" if escalated else "time-sensitive"
             occ = occurrence_key(t)
@@ -268,6 +273,74 @@ class Scheduler:
                                           lambda: self._telegram(kind, bucket, "", words["telegram"],
                                                                  self._buttons(t, snooze=False, label=words["done"]), [t["id"]]),
                                           words["telegram"], force, dry))
+        return out
+
+    def _lines_needed(self, t: dict, now: datetime) -> list[tuple[str, int, str, dict]]:
+        """The lines a one-off task will need today: (kind, step, situation, fill)."""
+        today, out = now.date().isoformat(), []
+        n = t["days_overdue"] if t["overdue"] else 0
+        late = {"late": voices.late_text(n)}
+        if t["alarm"] and t["state"] in ("due", "overdue"):
+            when = f"It is {late['late']} overdue; this alarm repeats daily until it's done." if n else "It is due today."
+            out.append(("alarm", voices.alarm_step(n), when, late))
+            out.append(("spoken", 1 if n else 0, when, late))
+        if t["priority"] == 1 and not t["alarm"] and t["overdue"]:
+            out.append(("overdue", voices.overdue_step(n), f"It is {late['late']} overdue (high priority).", late))
+        if t["nag"] and t["eff_due"] == today and t["state"] == "due":
+            due = t["schedule"]["due_time"] or self.cfg.default_due_time
+            ids = [t["assignee"]] if t["assignee"] else [p.id for p in self.cfg.people]
+            who = {"who": t["assignee_name"] or "everyone"}
+            for step in range(len(voices.VOICES[voices.voice_of_day(today)]["nag"])):
+                el = digest.elapsed_text(step * (t["nag"]["every"] or 0))
+                out.append(("nag", step, f"It was due at {due}; it's now {el} later and still not done."
+                            if step else f"It's due now ({due}).", {**who, "elapsed": el}))
+            if t["nag"]["escalate_at"]:
+                names = [p.name for p in map(self.cfg.person, t["nag"]["escalate_to"]) if p]
+                ev = {"everyone": digest._names(names), "have": "has" if len(names) == 1 else "have"}
+                for step in range(2):
+                    el = "hours" if not step else "even longer"
+                    out.append(("escalate", step, f"It's been ignored for {el} since {due}, so {ev['everyone']} "
+                                f"{ev['have']} been pulled in: this is a critical alert.", {**who, **ev, "elapsed": el}))
+        return out
+
+    async def prepare_lines(self, now: datetime, force=False) -> list[dict]:
+        """Once a day from 05:00: HA's persona script writes today's lines for
+        one-off tasks, in the day's voice, and they're stored for the sends to
+        use. Recurring tasks keep the fixed lines. Nothing is sent here, and a
+        failure only means the fixed lines are used."""
+        today = now.date().isoformat()
+        if not (self.cfg.voice_text_script and self.ha and self.ha.enabled):
+            return []
+        if not force and (now.hour < 5 or self.sent(0, "voice_prep", today, "ha")):
+            return []
+        v, out, failed = self.voice(now), [], ""
+        with self.store.tx() as db:
+            db.execute("DELETE FROM voice_lines WHERE day < ?", ((now.date() - timedelta(days=7)).isoformat(),))
+        for t in self.tasks.open_tasks():
+            if t["repeats"]:
+                continue
+            for kind, step, situation, fill in self._lines_needed(t, now):
+                if failed or v.stored(t["id"], kind, step):
+                    continue
+                fixed = v.fixed(kind, step, title=t["title"], **fill)
+                try:
+                    text, fell_back = await self.ha.era_text(self.cfg.voice_text_script,
+                                                             voices.prompt(v, t, kind, step, situation, fill), fixed, v.era)
+                except Exception as e:
+                    failed = f"{type(e).__name__}: {e}"
+                    log.warning("voice lines: HA failed (%s); the fixed lines stand in today", failed)
+                    continue
+                text = " ".join(text.replace('"', "").split())
+                naming = t["title"].lower() in text.lower()
+                if fell_back or not text or len(text) > 300 or (kind in ("nag", "escalate") and naming):
+                    continue
+                with self.store.tx() as db:
+                    db.execute("INSERT OR REPLACE INTO voice_lines(day, task_id, kind, step, text) VALUES (?,?,?,?,?)",
+                               (today, t["id"], kind, step, text))
+                out.append({"task_id": t["id"], "kind": kind, "step": step, "text": text})
+        # recorded as done even when HA failed: one try a day, so a down HA can't stall the tick
+        self.record(0, "voice_prep", today, "ha", True, (f"failed: {failed}; " if failed else "") + f"{len(out)} lines, {v.name}")
+        log.info("voice lines for %s: %d written (%s)%s", today, len(out), v.name, f", stopped: {failed}" if failed else "")
         return out
 
     def roll_over(self, now: datetime) -> list[dict]:
@@ -292,11 +365,12 @@ class Scheduler:
         for t in self.tasks.open_tasks():
             if t["priority"] != 1 or t["alarm"] or not t["overdue"] or (only_task and t["id"] != only_task):
                 continue
-            title, msg = digest.p1_overdue_push(t)
+            v = self.voice(now)
+            title, msg = digest.p1_overdue_push(t, v)
             send_to = to or self._target(t, self.cfg.digest_send_to)
             occ = occurrence_key(t)
-            actions = [{"action": f"TASK_DONE_{t['id']}_{occ}", "title": "Done"},
-                       {"action": f"TASK_SNOOZE_{t['id']}_{occ}", "title": "Snooze a day"}]
+            actions = [{"action": f"TASK_DONE_{t['id']}_{occ}", "title": v.done},
+                       {"action": f"TASK_SNOOZE_{t['id']}_{occ}", "title": v.snooze}]
             out.append(await self.deliver(t["id"], "p1_overdue_push", today, "ha_push",
                                           lambda: self.ha.notify(send_to, title, msg, "time-sensitive", f"task-{t['id']}", actions, respect_quiet=True),
                                           f"{title}: {msg} → {send_to}", force, dry))
@@ -312,7 +386,8 @@ class Scheduler:
         open_tasks = self.tasks.open_tasks()
         secs = digest.sections(open_tasks, now.date(), kind)
         job = f"digest_{kind}"
-        head, body = digest.render(secs, now.date(), kind)
+        v = self.voice(now)
+        head, body = digest.render(secs, now.date(), kind, voice=v)
         if not body:
             # Nothing to say: still mark the slot so nothing fires later today.
             self.record(0, job, today, "empty", True, "nothing due")
@@ -325,7 +400,7 @@ class Scheduler:
                                       f"{head}\n{body}", force, dry))
         people = [p for p in self.cfg.people if not to or p.send_to == to]
         for p in people:
-            ph, pb = digest.render(secs, now.date(), kind, p.id)
+            ph, pb = digest.render(secs, now.date(), kind, p.id, voice=v)
             out.append(await self.deliver(0, job, today, f"ha_push:{p.id}",
                                           lambda p=p, ph=ph, pb=pb: self.ha.notify(p.send_to, ph, pb, "active", "tasks-digest", respect_quiet=True),
                                           f"{ph} → {p.send_to}", force, dry))
@@ -337,7 +412,7 @@ class Scheduler:
         today = now.date().isoformat()
         if not force and (self.sent(0, "dog_alarm_digest", today, "spoken") or self.sent(0, "dog_alarm_nag", today, "spoken")):
             return []
-        said = digest.dog_alarm(self.tasks.open_tasks(), first_today=True)
+        said = digest.dog_alarm(self.tasks.open_tasks(), first_today=True, voice=self.voice(now))
         if not said["text"]:
             return []
         return [await self.deliver(0, "spoken_fallback", today, "spoken",
@@ -348,6 +423,7 @@ class Scheduler:
         self.last_tick = now.isoformat(timespec="seconds")
         await self.read_quiet(now)
         for name, job in (("roll_over", lambda: asyncio.to_thread(self.roll_over, now)),
+                          ("prepare_lines", lambda: self.prepare_lines(now)),
                           ("p0_push", lambda: self.p0_push(now)), ("nag_push", lambda: self.nag_push(now)),
                           ("p1_overdue", lambda: self.p1_overdue(now)),
                           ("digest_morning", lambda: self.digest_job(now, "morning")),
@@ -377,6 +453,8 @@ class Scheduler:
             return await self.digest_job(now, job.split("_")[1], force, dry, to)
         if job == "spoken_fallback":
             return await self.spoken_fallback(now, force, dry)
+        if job == "prepare_lines":
+            return await self.prepare_lines(now, force)
         raise ValueError(f"Unknown job {job!r}")
 
     async def run(self):

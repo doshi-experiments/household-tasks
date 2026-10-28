@@ -12,6 +12,7 @@ from datetime import date, datetime, timedelta
 from typing import Callable
 
 from . import schedule as sch
+from . import voices
 from .config import Config
 from .store import Store
 
@@ -144,6 +145,8 @@ class Tasks:
             "overdue": st == "overdue",
             "days_overdue": sch.days_overdue(eff, row["flex"], today) if st == "overdue" else 0,
             "occurrence": occurrence_key(row),
+            # the house's voice today: ingest-bot picks the Done GIF to match it
+            "voice": voices.voice_of_day(today),
         }
 
     # ------------------------------------------------------------ schedule input

@@ -16,4 +16,6 @@ Automations and scripts go in through Home Assistant's config API, for example `
 
 The calendar is a Remote Calendar integration pointed at `http://<TASKS_HOST>:8040/calendar.ics`, labelled for whatever your summaries read.
 
+**Reminder lines for one-off tasks** (optional): set `VOICE_TEXT_SCRIPT` to a script that takes `prompt`, `fallback_text` and `custom_era` (1–6: the voice, as numbered in `app/voices.py`) and returns `{text, used_fallback}` as its response. The service calls it from 05:00 each day with `?return_response`, up to 30 s per line, and stores what it gets. Without it, every task uses the fixed lines.
+
 `local/` (not in git) holds the exact versions installed in this house, plus the originals they replaced, for rollback.

@@ -70,6 +70,16 @@ class HomeAssistant:
                            {"action_type": "clear", "send_to": send_to if isinstance(send_to, list) else [send_to],
                             "tag": tag, "message": "clear_notification"})
 
+    async def era_text(self, script: str, prompt: str, fallback: str, era: int) -> tuple[str, bool]:
+        """Ask HA's persona script for a line in era `era` (its custom_era):
+        (text, used_fallback)."""
+        domain, _, name = script.partition(".")
+        resp = await self._call("POST", f"/api/services/{domain}/{name}?return_response",
+                                json={"prompt": prompt, "fallback_text": fallback, "custom_era": era}, timeout=30)
+        out = (resp or {}).get("service_response") or {}
+        text = str(out.get("text") or "").strip()
+        return (text or fallback), bool(out.get("used_fallback")) or not text
+
     async def announce(self, text: str, verbatim: bool):
         await self.service("script", "tasks_announce", {"text": text, "verbatim": verbatim})
 

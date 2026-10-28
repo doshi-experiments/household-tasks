@@ -73,6 +73,9 @@ CREATE TABLE IF NOT EXISTS notifications (
   detail TEXT NOT NULL DEFAULT '',
   UNIQUE (task_id, kind, bucket, channel));
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS voice_lines (
+  day TEXT NOT NULL, task_id INTEGER NOT NULL, kind TEXT NOT NULL, step INTEGER NOT NULL, text TEXT NOT NULL,
+  PRIMARY KEY (day, task_id, kind, step));
 CREATE TABLE IF NOT EXISTS telegram_messages (
   message_id INTEGER PRIMARY KEY, kind TEXT, bucket TEXT, task_ids TEXT, sent_at TEXT, buttons TEXT);
 """
@@ -134,7 +137,9 @@ class Store:
         2026-10-26: a Telegram message keeps the buttons it still offers (JSON), so
         a task closed elsewhere can be taken off it.
         2026-10-26: a task can nag (repeat its reminder every N minutes on the day
-        it's due) and escalate (critical pushes to more people from a set time)."""
+        it's due) and escalate (critical pushes to more people from a set time).
+        2026-10-27: voice_lines (a new table, so CREATE IF NOT EXISTS covers it)
+        holds the day's HA-written reminder lines for one-off tasks."""
         cols = {r[1] for r in self.db.execute("PRAGMA table_info(tasks)")}
         tg_cols = {r[1] for r in self.db.execute("PRAGMA table_info(telegram_messages)")}
         cat_cols = {r[1] for r in self.db.execute("PRAGMA table_info(categories)")}

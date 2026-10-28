@@ -35,7 +35,7 @@ The household's task and shopping service, running live as the Dockge stack `/op
 ## Commands
 
 ```bash
-docker compose build tasks && docker run --rm --network none tasks-tasks python -m unittest discover tests   # 65 offline tests
+docker compose build tasks && docker run --rm --network none tasks-tasks python -m unittest discover tests   # 70 offline tests
 docker compose up -d --build tasks
 docker compose logs --since=30m tasks | grep -E 'sent|dry-run|failed|WARNING'
 T=$(grep ^TASKS_API_TOKEN= .env | cut -d= -f2-)
@@ -49,7 +49,8 @@ Visual checks: screenshots of the live pages with headless Chromium (a throwaway
 
 - **`app/schedule.py`**: pure date rules. Kinds `none`, `interval` (from last done), `rrule` (fixed). `parse_phrase` turns words into a schedule; `apply_flex` does weekend flex (Mon–Thu → Friday); occurrences are identified by `nominal_due`, the next one comes from `cursor`. Unit-tested in `tests/test_schedule.py`. Areas: a category is `household` or `homelab`, and a task takes its category's area; homelab tasks add a `stage` (idea, next, doing).
 - **`app/tasks.py`**: the task rows. Create, patch, complete, skip, snooze; `serialize` adds `state`, `eff_due`, `occurrence`, `schedule_text`. Listeners fire after commits (the scheduler uses them to clear pushes, flip the Dog Meds switch and refresh HA's calendar).
-- **`app/scheduler.py`**: one asyncio minute tick. Alarm pushes, nagging repeats and escalations (`nag_push`, fixed lines in `digest.NAG_VOICES`, one voice a day, plus `roll_over` skipping a nagging task's missed day at midnight), High-overdue pushes, morning and evening summaries, the spoken fallback. Every send goes through `deliver` and the `notifications` ledger (unique per task, kind, day and channel).
+- **`app/scheduler.py`**: one asyncio minute tick. Alarm pushes, nagging repeats and escalations (`nag_push`, in the day's voice, plus `roll_over` skipping a nagging task's missed day at midnight), High-overdue pushes, morning and evening summaries, the spoken fallback. Every send goes through `deliver` and the `notifications` ledger (unique per task, kind, day and channel).
+- **`app/voices.py`**: the house's voices, one a day (`voice_of_day`): fixed lines for every reminder, summary head and button; `Today.line` swaps in a one-off task's stored HA-written line (`voice_lines`, written by `Scheduler.prepare_lines` from 05:00).
 - **`app/web.py`**: FastAPI routes, auth middleware, hooks for HA, `/calendar.ics`, and the built SPA.
 - **`app/store.py`**: SQLite schema; `_migrate` applies schema changes on start. Add new migrations there, never by hand.
 - **`app/ha.py`, `app/bot.py`**: Home Assistant REST (notification hub script, speech, switches, calendars) and ingest-bot's `/tasks-message`.

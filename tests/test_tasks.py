@@ -9,7 +9,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from app import digest, ics
+from app import digest, ics, voices
 from app.config import Config, Person
 from app.store import Store
 from app.tasks import TaskError, Tasks
@@ -230,7 +230,7 @@ class TaskBehaviour(Base):
         proj = self.tasks.projected(self.clock().date(), self.clock().date() + timedelta(days=14))
         weed = [p["date"].isoformat() for p in proj if p["task"]["id"] == c["id"]]
         self.assertEqual(weed[0], "2026-10-23")
-        said = digest.dog_alarm(self.tasks.open_tasks(), first_today=True)
+        said = digest.dog_alarm(self.tasks.open_tasks(), first_today=True, voice=voices.Today(self.clock().date()))
         self.assertTrue(said["verbatim"])
         self.assertIn("Meds", said["text"])
         self.assertIn("Gutters", said["text"])
@@ -418,29 +418,18 @@ class Nagging(Base):
         again = self.push(s, 9, 0, date(2026, 10, 20))
         self.assertTrue(again and not again[0]["summary"].startswith("⚠️"))   # a fresh, friendly start
 
-    def test_wording_one_house_voice_a_day_without_the_task_name(self):
+    def test_wording_in_the_day_s_voice_without_the_task_name(self):
         t = self.tasks.get(self.t["id"])
-        for voice, v in digest.NAG_VOICES.items():   # every line fills in, steps differ, the task isn't named
-            self.assertEqual((len(v["nag"]), len(v["escalate"])), (6, 2), voice)
-            self.assertTrue(v["done"].strip(), voice)
-            self.assertEqual(len(set(v["nag"])), 6, voice)
-            for line in v["nag"] + v["escalate"]:
-                self.assertNotIn("{title}", line)
-                self.assertNotIn("{", line.format(who="Alex", elapsed="an hour", everyone="Alex", have="has"))
-        self.assertNotIn("Plain", digest.NAG_VOICES)
-        day = lambda d: {digest.nag(t, step, step * 30, False, ["Alex"], seed=f"{t['id']}:{d}")["voice"] for step in range(6)}
-        self.assertEqual(len(day("2026-10-19")), 1)                        # one voice all day
-        self.assertGreater(len({v for d in range(1, 29) for v in day(f"2026-10-{d:02d}")}), 3)   # varies by day
-        said = digest.nag(t, 3, 90, False, ["Alex"], seed="7:2026-10-19")
-        self.assertEqual(said, digest.nag(t, 3, 90, False, ["Alex"], seed="7:2026-10-19"))
-        self.assertEqual((said["title"], said["telegram"], said["done"]),
-                         ("Morning pills", said["line"], digest.NAG_VOICES[said["voice"]]["done"]))
+        v = voices.Today("2026-10-19")
+        said = digest.nag(t, 3, 90, False, ["Alex"], v)
+        self.assertEqual(said["voice"], v.name)
+        self.assertEqual((said["title"], said["telegram"], said["done"]), ("Morning pills", said["line"], v.done))
         self.assertNotIn("Morning pills", said["line"])
-        esc = digest.nag(t, 0, 180, True, ["Alex", "Sam"], seed="x")
+        esc = digest.nag(t, 0, 180, True, ["Alex", "Sam"], v)
         self.assertEqual(esc["title"], "⚠️ Morning pills")
         self.assertTrue(esc["telegram"].startswith("⚠️ ") and not esc["line"].startswith("⚠️"))
         self.assertIn("Alex and Sam", esc["line"])
-        self.assertIn("5 hours", digest.nag(t, 9, 300, False, ["Alex"], seed="x")["line"])   # past the end: the last step
+        self.assertIn("5 hours", digest.nag(t, 9, 300, False, ["Alex"], v)["line"])   # past the end: the last step
         self.assertEqual([digest.elapsed_text(m) for m in (30, 60, 90, 150, 180)],
                          ["30 minutes", "an hour", "an hour and a half", "2 and a half hours", "3 hours"])
 
@@ -453,7 +442,7 @@ class Nagging(Base):
             listed = [t["id"] for _, rows in digest.sections(open_tasks, self.clock().date(), kind) for t in rows]
             self.assertIn(plain["id"], listed)
             self.assertNotIn(self.t["id"], listed)
-        self.assertNotIn(self.t["id"], digest.dog_alarm(open_tasks, first_today=True)["due_today"])
+        self.assertNotIn(self.t["id"], digest.dog_alarm(open_tasks, first_today=True, voice=voices.Today("2026-10-19"))["due_today"])
         from fastapi.testclient import TestClient
         from app.web import create_app
         app = create_app(cfg=self.cfg, store=self.store, clock=self.clock, start_scheduler=False)
@@ -461,6 +450,111 @@ class Nagging(Base):
             for feed in ("/calendar.ics", "/calendar-reminders.ics"):
                 self.assertNotIn("Morning pills", c.get(feed).text, feed)
             self.assertIn("Water plants", c.get("/calendar.ics").text)
+
+
+class FakeVoiceHA:
+    enabled = True
+
+    def __init__(self, fail=False):
+        self.calls, self.fail = [], fail
+
+    async def era_text(self, script, prompt, fallback, era):
+        self.calls.append((script, prompt, era))
+        if self.fail:
+            raise TimeoutError("HA is slow")
+        return f"Written line {len(self.calls)}, tap it.", False
+
+
+class Voices(Base):
+    """One house voice a day across every reminder, summary and button; fixed
+    lines for recurring tasks, HA-written ones (stored each morning) for one-offs."""
+
+    def sched(self, ha=None, **cfg):
+        from app.scheduler import Scheduler
+        self.cfg = make_cfg(voice_text_script="script.era_generate_text", **cfg)
+        self.tasks = Tasks(self.store, self.cfg, self.clock)
+        s = Scheduler(self.cfg, self.store, self.tasks, Shopping(self.store, self.clock), ha, None)
+        s.quiet_state = (False, self.clock())
+        return s
+
+    def test_every_voice_has_every_line(self):
+        self.assertEqual(sorted(voices.VOICES), ["Gen Z", "Mad scientist", "NYC cabbie", "Pirate", "Robot", "Shakespearean"])
+        self.assertEqual(sorted(v["era"] for v in voices.VOICES.values()), [1, 2, 3, 4, 5, 6])
+        fill = dict(title="Water plants", who="Alex", elapsed="an hour", late="3 days", everyone="Alex", have="has")
+        for name, v in voices.VOICES.items():
+            self.assertTrue(v["done"].strip() and v["snooze"].strip(), name)
+            for kind, n in (("nag", 6), ("escalate", 2), ("alarm", 4), ("overdue", 4), ("spoken", 2)):
+                self.assertEqual(len(v[kind]), n, (name, kind))
+                self.assertEqual(len(set(v[kind])), n, (name, kind))
+                for line in v[kind]:
+                    said = line.format(**fill)
+                    self.assertNotIn("{", said)
+                    self.assertEqual("Water plants" in said, kind not in ("nag", "escalate"), (name, kind, line))
+            for line in v["spoken"]:
+                self.assertTrue(all(ord(ch) < 0x2000 for ch in line), (name, line))    # read aloud: no emoji
+            for kind in ("morning", "evening"):
+                self.assertNotIn("{", v[kind].format(count="3 tasks"))
+        self.assertEqual([voices.alarm_step(n) for n in (0, 1, 2, 3, 9)], [0, 1, 2, 3, 3])
+        self.assertEqual([voices.overdue_step(n) for n in (1, 2, 3, 6, 7, 30)], [0, 1, 2, 2, 3, 3])
+
+    def test_one_voice_for_the_whole_house_each_day(self):
+        a = self.tasks.create({"title": "Water plants", "due": "2026-10-19"})
+        b = self.tasks.create({"title": "Bins", "due": "2026-10-20", "priority": "critical"})
+        name = voices.voice_of_day("2026-10-19")
+        self.assertEqual({self.tasks.get(a["id"])["voice"], self.tasks.get(b["id"])["voice"]}, {name})
+        secs = digest.sections(self.tasks.open_tasks(), date(2026, 10, 19), "morning")
+        head, _ = digest.render(secs, date(2026, 10, 19), "morning")
+        self.assertEqual(head, voices.Today("2026-10-19").head("morning", 1))
+        self.assertGreater(len({voices.voice_of_day(f"2026-10-{d:02d}") for d in range(1, 29)}), 3)
+
+    def test_alarm_and_overdue_speak_the_day_s_voice_and_name_the_task(self):
+        s = self.sched()
+        self.clock.set(date(2026, 10, 21), 18, 0)
+        v = voices.Today("2026-10-21")
+        alarm = self.tasks.create({"title": "Meds", "priority": "critical", "due": "2026-10-19",
+                                   "schedule": {"kind": "interval", "interval_n": 30, "interval_unit": "days", "due_time": "09:00"}})
+        high = self.tasks.create({"title": "Gutters", "priority": "high", "due": "2026-10-20",
+                                  "schedule": {"kind": "interval", "interval_n": 1, "interval_unit": "years"}})
+        sent = [r for r in asyncio.run(s.p0_push(self.clock())) if r["status"] == "dry-run"]
+        line = v.fixed("alarm", 2, title="Meds", late="2 days")
+        self.assertEqual([r["summary"] for r in sent if r["channel"] == "telegram"], [line])        # the line alone
+        self.assertTrue(sent[0]["summary"].startswith(f"⚠️ Meds: {line}"))                         # phone: title + line
+        self.assertEqual(s._buttons(self.tasks.get(alarm["id"]), label=v.done, snooze_label=v.snooze)[1]["label"], v.snooze)
+        over = [r for r in asyncio.run(s.p1_overdue(self.clock())) if r["status"] == "dry-run"]
+        self.assertEqual(over[0]["summary"].split(" → ")[0],
+                         f"Overdue: Gutters: {v.fixed('overdue', 0, title='Gutters', late='a day')}")
+        said = digest.dog_alarm(self.tasks.open_tasks(), first_today=False, voice=v)
+        self.assertEqual(said["text"], v.fixed("spoken", 1, title="Meds", late="2 days"))
+
+    def test_one_off_lines_are_written_each_morning_and_used(self):
+        ha = FakeVoiceHA()
+        s = self.sched(ha=ha)
+        self.clock.set(date(2026, 10, 19), 4, 59)
+        once = self.tasks.create({"title": "Airport run", "priority": "critical", "due": "2026-10-19"})
+        every = self.tasks.create({"title": "Meds", "priority": "critical", "due": "2026-10-19",
+                                   "schedule": {"kind": "interval", "interval_n": 30, "interval_unit": "days"}})
+        self.assertEqual(asyncio.run(s.prepare_lines(self.clock())), [])                 # not before 05:00
+        self.clock.set(date(2026, 10, 19), 5, 0)
+        wrote = asyncio.run(s.prepare_lines(self.clock()))
+        self.assertEqual(sorted((w["task_id"], w["kind"]) for w in wrote), [(once["id"], "alarm"), (once["id"], "spoken")])
+        v = voices.Today("2026-10-19", self.store)
+        self.assertTrue(all(era == v.era for _, _, era in ha.calls))
+        self.assertIn("Airport run", ha.calls[0][1])
+        self.assertEqual(asyncio.run(s.prepare_lines(self.clock())), [])                 # once a day
+        self.assertEqual(digest.p0_push(self.tasks.get(once["id"]), date(2026, 10, 19), v)[1], wrote[0]["text"])
+        self.assertEqual(digest.p0_push(self.tasks.get(every["id"]), date(2026, 10, 19), v)[1],
+                         v.fixed("alarm", 0, title="Meds", late="0 days"))              # recurring: fixed line
+
+    def test_ha_failing_leaves_the_fixed_lines(self):
+        s = self.sched(ha=FakeVoiceHA(fail=True))
+        self.clock.set(date(2026, 10, 19), 5, 0)
+        once = self.tasks.create({"title": "Airport run", "priority": "critical", "due": "2026-10-19"})
+        self.assertEqual(asyncio.run(s.prepare_lines(self.clock())), [])
+        self.assertEqual(len(s.ha.calls), 1)                                             # stops at the first failure
+        self.assertTrue(s.sent(0, "voice_prep", "2026-10-19", "ha"))                    # and doesn't retry all day
+        v = voices.Today("2026-10-19", self.store)
+        self.assertEqual(digest.p0_push(self.tasks.get(once["id"]), date(2026, 10, 19), v)[1],
+                         v.fixed("alarm", 0, title="Airport run", late="0 days"))
 
 
 class ShoppingBehaviour(Base):
