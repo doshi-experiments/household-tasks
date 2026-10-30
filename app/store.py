@@ -80,6 +80,28 @@ CREATE TABLE IF NOT EXISTS voice_lines (
   PRIMARY KEY (day, task_id, kind, step));
 CREATE TABLE IF NOT EXISTS telegram_messages (
   message_id INTEGER PRIMARY KEY, kind TEXT, bucket TEXT, task_ids TEXT, sent_at TEXT, buttons TEXT);
+CREATE TABLE IF NOT EXISTS staples (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL, norm TEXT NOT NULL UNIQUE,
+  default_product_id INTEGER,
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS staple_products (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  staple_id INTEGER NOT NULL REFERENCES staples(id) ON DELETE CASCADE,
+  label TEXT NOT NULL, norm_label TEXT NOT NULL,
+  code TEXT, catalogue_name TEXT, brand TEXT, size TEXT, image TEXT, link TEXT,
+  confidence REAL, linked_at TEXT,
+  created_at TEXT NOT NULL,
+  UNIQUE (staple_id, norm_label));
+CREATE TABLE IF NOT EXISTS price_obs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  code TEXT NOT NULL, banner TEXT NOT NULL, observed_at TEXT NOT NULL,
+  price_cents INTEGER, regular_cents INTEGER, unit_cents INTEGER, unit_qty REAL, unit TEXT,
+  on_sale INTEGER NOT NULL DEFAULT 0, sale_ends TEXT,
+  deal_type TEXT, deal_text TEXT, deal_cents INTEGER, deal_ends TEXT,
+  points INTEGER, points_ends TEXT, member_cents INTEGER,
+  in_stock INTEGER NOT NULL DEFAULT 1, suspect INTEGER NOT NULL DEFAULT 0);
+CREATE INDEX IF NOT EXISTS idx_price_obs ON price_obs(code, banner, observed_at);
 """
 
 CATEGORIES = [
@@ -144,7 +166,10 @@ class Store:
         2026-10-27: voice_lines (a new table, so CREATE IF NOT EXISTS covers it)
         holds the day's HA-written reminder lines for one-off tasks.
         2026-10-29 (user_version 1): items that took the defaults get the
-        category, store and aisle their title implies (_fill_aisles)."""
+        category, store and aisle their title implies (_fill_aisles).
+        2026-10-29: staples, staple_products and price_obs (new tables, so
+        CREATE IF NOT EXISTS covers them); an item points at its staple and
+        product (staple_id, product_id; NULL for a plain item)."""
         cols = {r[1] for r in self.db.execute("PRAGMA table_info(tasks)")}
         tg_cols = {r[1] for r in self.db.execute("PRAGMA table_info(telegram_messages)")}
         cat_cols = {r[1] for r in self.db.execute("PRAGMA table_info(categories)")}
@@ -183,6 +208,9 @@ class Store:
                 db.execute("UPDATE shopping_lists SET archived=1 WHERE name='Everything Else'")
                 db.execute("UPDATE shopping_lists SET hint='Everything we need to buy, from any store'"
                            " WHERE name='Groceries'")
+            if "staple_id" not in item_cols:
+                db.execute("ALTER TABLE items ADD COLUMN staple_id INTEGER")
+                db.execute("ALTER TABLE items ADD COLUMN product_id INTEGER")
             if db.execute("PRAGMA user_version").fetchone()[0] < 1:
                 self._fill_aisles(db)
                 db.execute("PRAGMA user_version=1")

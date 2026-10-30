@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from zoneinfo import ZoneInfo
 
 HHMM = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+PRICES_SLOT = re.compile(r"^\s*(mon|tue|wed|thu|fri|sat|sun)[a-z]*\s+([01]\d|2[0-3]):[0-5]\d\s*$")
 # a scheme and host, with an optional port: nothing that could end the CSP directive
 ORIGIN = re.compile(r"^https?://[A-Za-z0-9.-]+(:\d{1,5})?$")
 
@@ -54,6 +55,12 @@ class Config:
     # HA's persona script (script.era_generate_text, with custom_era) that writes
     # one-off tasks' reminder lines each morning. Blank = fixed lines for all.
     voice_text_script: str = ""
+    # Loblaw prices (app/prices.py): the web key their sites ship, and which
+    # store of each chain to price at. Blank key = staples still work, no prices.
+    pcx_api_key: str = ""
+    pcx_stores: tuple[tuple[str, str], ...] = ()   # (banner, store id), the first one is searched
+    prices_refresh: str = "thu 07:00"
+    prices_split_min: float = 10.0
     log_level: str = "INFO"
 
     @property
@@ -115,6 +122,11 @@ def load() -> Config:
         calendar_days_ahead=int(e("CALENDAR_DAYS_AHEAD", "90") or 90),
         frame_ancestors=tuple(e("FRAME_ANCESTORS").replace(",", " ").split()),
         voice_text_script=e("VOICE_TEXT_SCRIPT"),
+        pcx_api_key=e("PCX_API_KEY"),
+        pcx_stores=tuple(tuple(p.strip() for p in part.split(":", 1)) for part in
+                         filter(None, (x.strip() for x in e("PCX_STORES").split(","))) if ":" in part),
+        prices_refresh=e("PRICES_REFRESH", "thu 07:00"),
+        prices_split_min=float(e("PRICES_SPLIT_MIN", "10") or 10),
         log_level=e("LOG_LEVEL", "INFO").upper(),
     )
     problems = []
@@ -127,6 +139,10 @@ def load() -> Config:
         problems.append("QUIET_START and QUIET_END must both be HH:MM (or both blank)")
     if cfg.spoken_fallback and not HHMM.match(cfg.spoken_fallback):
         problems.append("SPOKEN_FALLBACK must be HH:MM or blank")
+    if bad := [f"{b}:{s}" for b, s in cfg.pcx_stores if b not in ("superstore", "nofrills", "wholesaleclub") or not s.isdigit()]:
+        problems.append(f"PCX_STORES takes banner:store id pairs (superstore, nofrills, wholesaleclub), not {', '.join(bad)}")
+    if not PRICES_SLOT.match(cfg.prices_refresh.lower()):
+        problems.append("PRICES_REFRESH must be a day and time, like thu 07:00")
     if bad := [o for o in cfg.frame_ancestors if not ORIGIN.match(o)]:
         problems.append(f"FRAME_ANCESTORS takes origins like http://host:8123, not {', '.join(bad)}")
     ZoneInfo(cfg.tz_name)

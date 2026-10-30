@@ -6,6 +6,7 @@ from typing import Callable
 
 from .aisles import (AISLES, CATEGORIES as ITEM_CATEGORIES, DEFAULT_AISLES, DEFAULT_CATEGORY, DEFAULT_STORE,
                      aisle_for, aisles_for, category_of, classify, department_in, store_for)
+from .staples import Staples
 from .store import Store
 from .tasks import TaskError
 
@@ -84,6 +85,7 @@ class Shopping:
     def __init__(self, store: Store, clock: Callable[[], datetime]):
         self.store, self.clock = store, clock
         self.lists = Lists(store, "shopping_lists", "items", "list", "bought_at IS NULL")
+        self.staples = Staples(store, clock)
 
     def _now(self) -> str:
         return self.clock().isoformat(timespec="seconds")
@@ -153,10 +155,12 @@ class Shopping:
             sql += " AND lower(list)=lower(?)"
             args.append(list_name)
         sql += " ORDER BY bought_at DESC" if bought else " ORDER BY list, position, id"
-        return self.store.all(sql, args)
+        return self.staples.decorate(self.store.all(sql, args))
 
     def add(self, items: list[dict]) -> list[dict]:
-        """Add items; an identical unbought item on the same list is returned instead of duplicated."""
+        """Add items; an identical unbought item on the same list is returned instead of duplicated.
+        An item's optional product teaches or uses its staple (app/staples.py); each
+        returned item says how it was read (read_as, learned, ask_usual)."""
         out = []
         now = self._now()
         with self.store.tx() as db:
@@ -164,6 +168,9 @@ class Shopping:
                 title = str(it.get("title") or "").strip()
                 if not title:
                     continue
+                res = self.staples.resolve(db, title, it.get("product"))
+                title = res["title"]
+                flags = {k: res[k] for k in ("read_as", "learned", "ask_usual")}
                 lst = self._list(it.get("list"))
                 dept = classify(title)
                 category = self._category(it["category"]) if str(it.get("category") or "").strip() else category_of(dept)
@@ -172,16 +179,24 @@ class Shopping:
                 dup = db.execute("SELECT * FROM items WHERE bought_at IS NULL AND list=? AND store=?"
                                  " AND lower(title)=lower(?)", (lst, store, title)).fetchone()
                 if dup:
-                    out.append({**dict(dup), "duplicate": True})
+                    dup = dict(dup)
+                    if res["product_id"] and dup["product_id"] != res["product_id"]:
+                        # "natrel 2% milk" while plain "milk" is listed: the listed one takes the product
+                        db.execute("UPDATE items SET staple_id=?, product_id=?, updated_at=? WHERE id=?",
+                                   (res["staple_id"], res["product_id"], now, dup["id"]))
+                        dup.update(staple_id=res["staple_id"], product_id=res["product_id"])
+                    out.append({**dup, "duplicate": True, **flags})
                     continue
                 pos = db.execute("SELECT coalesce(max(position),0)+1 FROM items WHERE list=?", (lst,)).fetchone()[0]
                 cur = db.execute("INSERT INTO items(title, list, notes, added_by, position, source, created_at,"
-                                 " updated_at, category, store, aisle) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                                 " updated_at, category, store, aisle, staple_id, product_id)"
+                                 " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                                  (title[:200], lst, str(it.get("notes") or ""), str(it.get("added_by") or ""), pos,
-                                  str(it.get("source") or ""), now, now, category, store, aisle))
+                                  str(it.get("source") or ""), now, now, category, store, aisle,
+                                  res["staple_id"], res["product_id"]))
                 out.append({**dict(db.execute("SELECT * FROM items WHERE id=?", (cur.lastrowid,)).fetchone()),
-                            "duplicate": False})
-        return out
+                            "duplicate": False, **flags})
+        return self.staples.decorate(out)
 
     def patch(self, item_id: int, body: dict) -> dict:
         row = self.get(item_id)

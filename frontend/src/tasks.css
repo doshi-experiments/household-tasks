@@ -139,6 +139,13 @@ a.ds-button {text-decoration:none; display:inline-flex; align-items:center; just
 .tasks-tick.is-done {background:var(--ds-action-gradient, var(--ds-action-primary)); box-shadow:none}
 .tasks-items-bought .tasks-item-title {text-decoration:line-through; color:var(--ds-text-secondary)}
 .tasks-item-remove {flex:none; width:48px; background:none; border:0; color:var(--ds-text-secondary); font-size:1.4rem; cursor:pointer}
+/* Staples and Loblaw prices: the product under the title, prices under the row, a summary above the list. */
+.tasks-item-product {display:block; font-size:.875rem; color:var(--ds-text-secondary)}
+.tasks-item-price {flex-basis:100%; display:flex; flex-wrap:wrap; align-items:center; gap:4px 12px; padding:0 4px 4px 44px; font-size:.875rem}
+.tasks-item-store-price {display:inline-flex; align-items:center; gap:6px}
+.tasks-prices {display:grid; gap:6px; padding:0 4px}
+.tasks-prices p {margin:0}
+.tasks-prices-check {display:flex; flex-wrap:wrap; align-items:center; gap:4px 12px}
 
 /* Celebration: never takes a click, always gone within ~2 s. */
 .tasks-celebrate {position:fixed; inset:0; z-index:200; pointer-events:none; overflow:hidden}

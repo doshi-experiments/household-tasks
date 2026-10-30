@@ -35,13 +35,15 @@ The household's task and shopping service, running live as the Dockge stack `/op
 ## Commands
 
 ```bash
-docker compose build tasks && docker run --rm --network none tasks-tasks python -m unittest discover tests   # 77 offline tests
+docker compose build tasks && docker run --rm --network none tasks-tasks python -m unittest discover tests   # 119 offline tests
 docker compose up -d --build tasks
 docker compose logs --since=30m tasks | grep -E 'sent|dry-run|failed|WARNING'
 T=$(grep ^TASKS_API_TOKEN= .env | cut -d= -f2-)
 B=http://$(grep ^TASKS_BIND_ADDR= .env | cut -d= -f2-):8040
 curl -s -H "Authorization: Bearer $T" "$B/api/digest/preview?kind=evening"   # what a summary would say
 ```
+
+**Not on this host (2026-10-29):** scratch copies of the service and headless-Chromium screenshots pushed the LXC's load past 100 and restarted it. Verify with the offline tests (with `-v "$PWD/app:/app/app:ro" -v "$PWD/tests:/app/tests:ro"` on the existing image, no rebuild needed) and read-only GETs against live, then ask the user to look at the page. The recipe below is kept for a bigger host only.
 
 Visual checks: screenshots of the live pages with headless Chromium (a throwaway Node image with `chromium` and `puppeteer-core`, run with `--network host`) are the way to look at the UI here; set `localStorage` keys `tasks-me`, `tasks-view-<tab>`, `tasks-period-<tab>`, `tasks-appearance` before loading. Read-only page loads are fine on live; anything that clicks Done, Snooze or drags goes to the scratch copy.
 
@@ -52,10 +54,12 @@ Visual checks: screenshots of the live pages with headless Chromium (a throwaway
 - **`app/scheduler.py`**: one asyncio minute tick. Alarm pushes, nagging repeats and escalations (`nag_push`, in the day's voice, plus `roll_over` skipping a nagging task's missed day at midnight), High-overdue pushes, morning and evening summaries, the spoken fallback. Every send goes through `deliver` and the `notifications` ledger (unique per task, kind, day and channel).
 - **`app/voices.py`**: the house's voices, one a day (`voice_of_day`): fixed lines for every reminder, summary head and button; `Today.line` swaps in a one-off task's stored HA-written line (`voice_lines`, written by `Scheduler.prepare_lines` from 05:00).
 - **`app/aisles.py`**: pure shopping rules. `classify(title)` gives a department; departments give the category, `CATEGORY_STORES` the usual store, and `LAYOUTS` each store's aisles (`GENERIC_LAYOUT` for stores with none). Unit-tested in `tests/test_aisles.py`. `app/shopping.py` fills blanks from it.
+- **`app/staples.py`**: the product each household word means. `norm` folds case, accents, punctuation and plurals; `closest` forgives small typos (Damerau distance by length, same first letter, ties refused). `Staples.resolve` runs inside `Shopping.add`: a named product teaches the word's usual or goes on that item only with `ask_usual`; `set_product` is a correction; `settle` drops the question when both products are the same catalogue code. Unit-tested in `tests/test_staples.py`.
+- **`app/pcx.py`, `app/prices.py`**: Loblaw's undocumented PC Express web API, anonymous with the static web key (`PCX_API_KEY`), one request every 2 s; 401/403 raise `PcxBlocked` and are never retried. `Prices.link` matches a staple's product to the catalogue once (`pick`/`score`), `refresh` checks linked products by code at every `PCX_STORES` store (weekly in `Prices.run`, its own asyncio task, never in the reminder tick; the Shopping tab's button via `start`), `view` builds the list's quotes. It never notifies. Tested offline with a fake client in `tests/test_prices.py`; never call the real API from tests.
 - **`app/web.py`**: FastAPI routes, auth middleware, hooks for HA, `/calendar.ics`, and the built SPA.
 - **`app/store.py`**: SQLite schema; `_migrate` applies schema changes on start. Add new migrations there, never by hand.
 - **`app/ha.py`, `app/bot.py`**: Home Assistant REST (notification hub script, speech, switches, calendars) and ingest-bot's `/tasks-message`.
-- **`frontend/src`**: React. `main.jsx` (tabs and routes), `tasks.jsx` (page, period filter, shared actions), `board.jsx` (generic dnd-kit `Board`; `TaskBoard` = priority columns), `homelab.jsx` (the progress board), `table.jsx` (sort, filters, inline edits), `snooze.jsx`, `task-form.jsx` with `schedule-builder.jsx` and `nag.jsx`, `shopping.jsx`, `history.jsx`, `celebrate.jsx`, `tasks.css`.
+- **`frontend/src`**: React. `main.jsx` (tabs and routes), `tasks.jsx` (page, period filter, shared actions), `board.jsx` (generic dnd-kit `Board`; `TaskBoard` = priority columns), `homelab.jsx` (the progress board), `table.jsx` (sort, filters, inline edits), `snooze.jsx`, `task-form.jsx` with `schedule-builder.jsx` and `nag.jsx`, `shopping.jsx` with `prices.jsx` (product and price lines, the price summary), `history.jsx`, `celebrate.jsx`, `tasks.css`.
 
 ## Design
 

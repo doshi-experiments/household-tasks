@@ -2,6 +2,7 @@ import React, {useEffect, useRef, useState} from 'react';
 import {Alert, Button, Dialog, EmptyState, PageHeader, Select, TextField, toast} from '@doshi-experiments/design-system/react';
 import {api, del, patch, post} from './api';
 import {Pending} from './pending';
+import {ItemPrice, PriceSummary, productText} from './prices';
 
 // Built for one-handed use in a store: big tick targets, instant feedback,
 // undo instead of confirmation. Refreshes every 30 s for items the bot adds.
@@ -38,6 +39,7 @@ export function ShoppingList({boot, me}) {
   // '' leaves the store, category and aisle to the service (from the title)
   const [addStore, setAddStore] = useState(''), [addCategory, setAddCategory] = useState(''), [addAisle, setAddAisle] = useState('');
   const [asking, setAsking] = useState(null), [storeName, setStoreName] = useState('');
+  const [prices, setPrices] = useState(null);
   const input = useRef(null);
 
   // Every store we know of, plus any a just-added item carries before the
@@ -48,10 +50,25 @@ export function ShoppingList({boot, me}) {
 
   const load = async () => {
     try {
-      const [open, done, s] = await Promise.all([api('shopping'), api('shopping?bought=1'), api('shopping/stores')]);
-      setItems(open.items); setBought(done.items.slice(0, 30)); setKnown(s.stores); setError('');
+      const [open, done, s, p] = await Promise.all([api('shopping'), api('shopping?bought=1'), api('shopping/stores'),
+        boot.prices?.enabled ? api('prices') : null]);
+      setItems(open.items); setBought(done.items.slice(0, 30)); setKnown(s.stores); setPrices(p); setError('');
     } catch (e) {setError(e.message);}
   };
+  // While a price check runs, look again every 10 s so the new prices show when it's done.
+  useEffect(() => {
+    if (!prices?.running) return undefined;
+    const timer = setTimeout(load, 10000);
+    return () => clearTimeout(timer);
+  }, [prices]);
+  const checkPrices = async () => {
+    try {
+      const r = await post('prices/refresh');
+      toast('Checking prices', r.products ? `About ${Math.max(1, Math.round(r.eta_seconds / 60))} min for ${r.products} products.` : 'Nothing on the list is matched to a product yet.');
+      setPrices(p => ({...p, running:!!r.products}));
+    } catch (e) {toast('Prices not checked', e.message, {tone:'warning'});}
+  };
+  const move = (item, store) => change(item, {store});
   useEffect(() => {
     load();
     const timer = setInterval(() => {if (document.visibilityState === 'visible') load();}, 30000);
@@ -85,7 +102,7 @@ export function ShoppingList({boot, me}) {
         title:t, store:addStore, category:addCategory, aisle:addAisle, added_by:me, source:'web'}))});
       const dup = r.items.filter(i => i.duplicate).map(i => i.title), fresh = r.items.filter(i => !i.duplicate);
       setError(dup.length ? `Already on the list: ${dup.join(', ')}` : '');
-      if (fresh.length) toast(`Added: ${fresh.map(i => i.title).join(', ')}`, placed(fresh));
+      if (fresh.length) toast(`Added: ${fresh.map(i => i.product ? `${i.title} (${i.product.label})` : i.title).join(', ')}`, placed(fresh));
       await load();
     } catch (err) {setError(err.message); setTitle(text);}
     input.current?.focus();
@@ -165,6 +182,7 @@ export function ShoppingList({boot, me}) {
         onValueChange={setAddCategory} options={[['', 'Auto category'], ...shop.item_categories.map(c => [c, c])]}/>
     </div>
     {error && <Alert tone="warning">{error}</Alert>}
+    <PriceSummary prices={prices} onCheck={checkPrices}/>
     {undo && <Alert tone="success" actions={<Button size="small" onClick={() => unbuy(undo)}>Undo</Button>}>Bought {undo.title}.</Alert>}
     {!items && !error && <Pending>Loading the list…</Pending>}
     {items && !rows.length && <EmptyState title={filterStore === 'all' ? 'Nothing to buy' : `Nothing to buy at ${short(filterStore)}`}
@@ -174,8 +192,10 @@ export function ShoppingList({boot, me}) {
       <ul className="tasks-items">{g.items.map(i => <li key={i.id}>
         <button type="button" className="tasks-item" onClick={() => buy(i)} aria-label={`Bought ${i.title}`}>
           <span className="tasks-tick" aria-hidden="true"/><span><span className="tasks-item-title">{i.title}</span>
-          {i.notes && <span className="tasks-muted"> · {i.notes}</span>}</span></button>
+          {i.notes && <span className="tasks-muted"> · {i.notes}</span>}
+          {i.product && <span className="tasks-item-product">{productText(i.product)}</span>}</span></button>
         <button type="button" className="tasks-item-remove" onClick={() => remove(i)} aria-label={`Remove ${i.title}`}>×</button>
+        <ItemPrice item={i} quote={prices?.items?.[i.id]} onMove={move}/>
         {meta(i)}
       </li>)}</ul></section>)}</div>}
     {boughtRows.length > 0 && <section className="tasks-stack-tight">

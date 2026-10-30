@@ -23,6 +23,8 @@ from . import config, digest, ics
 from . import schedule as sch
 from .bot import Bot
 from .ha import HomeAssistant
+from .pcx import Pcx
+from .prices import Prices
 from .scheduler import Scheduler
 from .shopping import AISLES, DEFAULT_AISLES, DEFAULT_CATEGORY, DEFAULT_STORE, ITEM_CATEGORIES, Lists, Shopping
 from .store import Store
@@ -33,7 +35,7 @@ OPEN_PATHS = {"/api/health", "/calendar.ics", "/calendar-reminders.ics"}
 log = logging.getLogger("tasks")
 
 
-def create_app(cfg=None, store=None, clock=None, start_scheduler=True):
+def create_app(cfg=None, store=None, clock=None, start_scheduler=True, pcx=None):
     cfg = cfg or config.load()
     logging.basicConfig(level=cfg.log_level, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     store = store or Store(cfg.db_path)
@@ -43,21 +45,30 @@ def create_app(cfg=None, store=None, clock=None, start_scheduler=True):
     ha = HomeAssistant(cfg.ha_url, cfg.ha_token)
     bot = Bot(cfg.bot_url, cfg.bot_token)
     sched = Scheduler(cfg, store, tasks, shopping, ha, bot)
+    if pcx is None and cfg.pcx_api_key and cfg.pcx_stores:
+        pcx = Pcx(cfg.pcx_api_key, cfg.tz)
+    prices = Prices(store, shopping.staples, tasks.now, pcx, cfg.pcx_stores, cfg.prices_refresh, cfg.prices_split_min)
 
     @asynccontextmanager
     async def lifespan(_app):
         sched.loop = asyncio.get_running_loop()
         runner = asyncio.create_task(sched.run()) if start_scheduler else None
-        log.info("tasks up: notify_enabled=%s ha=%s bot=%s", cfg.notify_enabled, ha.enabled, bot.enabled)
+        # its own task, never inside the minute tick: a slow price check can't delay a reminder
+        pricer = asyncio.create_task(prices.run()) if start_scheduler else None
+        log.info("tasks up: notify_enabled=%s ha=%s bot=%s prices=%s", cfg.notify_enabled, ha.enabled, bot.enabled,
+                 prices.enabled)
         yield
-        if runner:
-            runner.cancel()
+        for t in (runner, pricer):
+            if t:
+                t.cancel()
         await ha.close()
         await bot.close()
+        if pcx:
+            pcx.close()
         store.close()
 
     app = FastAPI(title="Household tasks", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
-    app.state.tasks, app.state.scheduler, app.state.shopping = tasks, sched, shopping
+    app.state.tasks, app.state.scheduler, app.state.shopping, app.state.prices = tasks, sched, shopping, prices
 
     def bearer_ok(request: Request) -> bool:
         got = request.headers.get("authorization", "")
@@ -98,7 +109,8 @@ def create_app(cfg=None, store=None, clock=None, start_scheduler=True):
     def health():
         return {"ok": True, "open": len(tasks.open_tasks()), "scheduler_tick": sched.last_tick,
                 "notify_enabled": cfg.notify_enabled, "quiet_now": sched.quiet(tasks.now()), "ha_configured": ha.enabled, "bot_configured": bot.enabled,
-                "last_ha_error": ha.last_error, "last_bot_error": bot.last_error}
+                "last_ha_error": ha.last_error, "last_bot_error": bot.last_error,
+                "prices_enabled": prices.enabled, "prices_last_refresh": prices.view([])["last_refresh"]}
 
     @app.get("/api/bootstrap")
     def bootstrap():
@@ -106,6 +118,7 @@ def create_app(cfg=None, store=None, clock=None, start_scheduler=True):
                 "shopping": {"item_categories": ITEM_CATEGORIES, "stores": [s["name"] for s in shopping.stores()],
                              "aisles": AISLES, "default_aisles": DEFAULT_AISLES,
                              "defaults": {"category": DEFAULT_CATEGORY, "store": DEFAULT_STORE}},
+                "prices": {"enabled": prices.enabled, "stores": prices.view([])["stores"]},
                 "people": [{"id": p.id, "name": p.name} for p in cfg.people],
                 "tz": cfg.tz_name, "today": tasks.today().isoformat(), "notify_enabled": cfg.notify_enabled,
                 "settings": {"digest_morning": cfg.digest_morning, "digest_evening": cfg.digest_evening,
@@ -271,7 +284,32 @@ def create_app(cfg=None, store=None, clock=None, start_scheduler=True):
     @app.post("/api/shopping")
     def add_items(body: dict = Body(...)):
         items = body.get("items") or ([body] if body.get("title") else [])
-        return {"items": shopping.add(items)}
+        made = shopping.add(items)
+        prices.link_pending(made)   # up to 8 s, so the bot's reply can name the catalogue match
+        return {"items": [shopping.staples.settle(i) for i in shopping.staples.decorate(made)]}
+
+    @app.post("/api/shopping/{item_id}/product")
+    def set_item_product(item_id: int, body: dict = Body(...)):
+        item = shopping.staples.set_product(item_id, body.get("product", ""))
+        prices.link_pending([item])
+        return {"item": {**shopping.staples.decorate([shopping.get(item_id)])[0], "usual_changed": item["usual_changed"]}}
+
+    # ------------------------------------------------------------ staples and prices
+    @app.get("/api/staples")
+    def list_staples():
+        return {"staples": shopping.staples.all()}
+
+    @app.post("/api/staples/{staple_id}/usual")
+    def make_usual(staple_id: int, body: dict = Body(...)):
+        return {"staple": shopping.staples.make_usual(staple_id, int(body.get("product_id") or 0))}
+
+    @app.get("/api/prices")
+    def price_view():
+        return prices.view(shopping.items())
+
+    @app.post("/api/prices/refresh")
+    def refresh_prices():
+        return prices.start()
 
     @app.post("/api/shopping/reorder")
     def reorder_items(body: dict = Body(...)):
