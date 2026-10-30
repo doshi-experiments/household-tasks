@@ -256,6 +256,14 @@ def create_app(cfg=None, store=None, clock=None, start_scheduler=True):
     def archive_shopping_list(name: str):
         return {"list": shopping.lists.archive(name)}
 
+    @app.get("/api/shopping/stores")
+    def list_stores():
+        return {"stores": [s["name"] for s in shopping.stores()]}
+
+    @app.post("/api/shopping/stores")
+    def add_store(body: dict = Body(...)):
+        return {"store": shopping.add_store(body.get("name", "")), "stores": [s["name"] for s in shopping.stores()]}
+
     @app.get("/api/shopping")
     def list_items(list: str | None = None, bought: int = 0):
         return {"items": shopping.items(list, bool(bought))}

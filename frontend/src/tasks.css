@@ -122,6 +122,8 @@ a.ds-button {text-decoration:none; display:inline-flex; align-items:center; just
 .tasks-shopping {max-width:640px}
 .tasks-shopping-controls {display:flex; flex-wrap:wrap; align-items:center; gap:8px}
 .tasks-shopping-controls > :first-child {min-width:0}
+.tasks-aisle {display:grid; gap:2px}
+.tasks-aisle > h2 {padding:0 4px}
 .tasks-add-meta,.tasks-item-meta {display:flex; flex-wrap:wrap; align-items:center; gap:2px 12px}
 .tasks-add-meta {margin-top:-4px; padding:0 4px}
 .tasks-item-meta {flex-basis:100%; padding:0 4px 8px 44px}

@@ -577,33 +577,66 @@ class ShoppingBehaviour(Base):
         shop = Shopping(self.store, self.clock)
         bare = shop.add([{"title": "Eggs"}])[0]
         self.assertEqual((bare["category"], bare["store"], bare["aisle"]),
-                         ("Groceries", "Real Canadian Superstore", ""))
+                         ("Groceries", "Real Canadian Superstore", "Dairy & Eggs"))
         it = shop.add([{"title": "Rotisserie chicken", "store": "costco", "category": "groceries",
                         "aisle": "deli & prepared"}])[0]
         self.assertEqual((it["store"], it["category"], it["aisle"]), ("Costco", "Groceries", "Deli & Prepared"))
         odd = shop.add([{"title": "Mystery", "category": "Gadgets", "aisle": "Aisle 99"}])[0]
-        self.assertEqual((odd["category"], odd["aisle"]), ("Other", ""))
+        self.assertEqual((odd["category"], odd["store"], odd["aisle"]), ("Other", "Real Canadian Superstore", ""))
+        unknown = shop.add([{"title": "Something new"}])[0]
+        self.assertEqual((unknown["category"], unknown["store"], unknown["aisle"]),
+                         ("Groceries", "Real Canadian Superstore", ""))
+
+    def test_title_picks_category_store_and_aisle(self):
+        shop = Shopping(self.store, self.clock)
+        got = lambda it: (it["category"], it["store"], it["aisle"])
+        a = shop.add([{"title": "Shrubs for the yard"}, {"title": "greek yogurt"}, {"title": "yogurt", "store": "Costco"},
+                      {"title": "Dining chairs"}, {"title": "Something new", "category": "Garden"},
+                      {"title": "Ice cream", "aisle": "Snacks"}, {"title": "Paper towels", "category": "Pet Supplies"}])
+        self.assertEqual([got(i) for i in a], [
+            ("Garden", "Home Depot", "Garden Centre"),
+            ("Groceries", "Real Canadian Superstore", "Dairy & Eggs"),
+            ("Groceries", "Costco", "Dairy"),                      # a named store keeps the item
+            ("Furniture & Decor", "IKEA", "Showroom"),
+            ("Garden", "Home Depot", ""),                          # a chosen category picks the store
+            ("Groceries", "Real Canadian Superstore", "Snacks"),   # a chosen aisle wins
+            ("Pet Supplies", "Real Canadian Superstore", "Household")])
+
+    def test_add_store(self):
+        shop = Shopping(self.store, self.clock)
+        self.assertEqual(shop.add_store("canadian tire "), "canadian tire")
+        self.assertEqual(shop.add_store("Canadian Tire"), "canadian tire")   # same store, any case
+        self.assertIn("canadian tire", [s["name"] for s in shop.stores()])
+        with self.assertRaises(TaskError):
+            shop.add_store("  ")
 
     def test_new_store_is_created_on_the_fly(self):
         shop = Shopping(self.store, self.clock)
-        self.assertEqual([s["name"] for s in shop.stores()], ["Real Canadian Superstore", "Costco"])
+        self.assertEqual([s["name"] for s in shop.stores()], ["Real Canadian Superstore", "Costco", "Home Depot", "IKEA", "Best Buy"])
         a = shop.add([{"title": "Tarp", "store": "Home Depot", "aisle": "Deli"}])[0]
-        self.assertEqual((a["store"], a["aisle"]), ("Home Depot", ""))  # new stores get the generic aisles
-        again = shop.add([{"title": "tarp", "store": "home depot"}])[0]
+        self.assertEqual((a["store"], a["aisle"]), ("Home Depot", ""))  # Home Depot has no Deli
+        b = shop.add([{"title": "Tarp", "store": "Canadian Tire"}])[0]
+        self.assertEqual((b["store"], b["aisle"]), ("Canadian Tire", "Home Improvement"))  # new stores get the generic aisles
+        again = shop.add([{"title": "tarp", "store": "canadian tire"}])[0]
         self.assertTrue(again["duplicate"])
-        self.assertEqual([s["name"] for s in shop.stores()],
-                         ["Real Canadian Superstore", "Costco", "Home Depot"])
+        self.assertEqual([s["name"] for s in shop.stores()], ["Real Canadian Superstore", "Costco", "Home Depot", "IKEA", "Best Buy", "Canadian Tire"])
 
     def test_store_change_revalidates_aisle(self):
         shop = Shopping(self.store, self.clock)
         it = shop.add([{"title": "Ham", "aisle": "Deli"}])[0]
         self.assertEqual(it["aisle"], "Deli")
         moved = shop.patch(it["id"], {"store": "Costco"})
-        self.assertEqual((moved["store"], moved["aisle"]), ("Costco", ""))  # Costco has no plain Deli
+        self.assertEqual((moved["store"], moved["aisle"]), ("Costco", "Deli & Prepared"))  # the same department there
         back = shop.patch(it["id"], {"store": "Real Canadian Superstore", "aisle": "Deli"})
         self.assertEqual(back["aisle"], "Deli")
         kept = shop.patch(it["id"], {"category": "Pet Supplies"})
         self.assertEqual((kept["category"], kept["aisle"]), ("Pet Supplies", "Deli"))
+        shop.patch(it["id"], {"aisle": ""})
+        self.assertEqual(shop.patch(it["id"], {"store": "IKEA"})["aisle"], "")   # IKEA keeps no food
+        shrubs = shop.add([{"title": "Shrubs"}])[0]
+        self.assertEqual(shop.patch(shrubs["id"], {"store": "Real Canadian Superstore"})["aisle"], "Home & Garden")
+        loose = shop.patch(shrubs["id"], {"aisle": ""})
+        self.assertEqual(shop.patch(loose["id"], {"store": "Costco"})["aisle"], "Home & Garden")  # from the title
 
     def test_archived_list_name_coerces_to_default(self):
         shop = Shopping(self.store, self.clock)
@@ -651,10 +684,46 @@ class ShoppingBehaviour(Base):
             self.assertTrue(all(r["list"] == "Groceries" for r in rows))
             by_title = {r["title"]: r for r in rows}
             self.assertEqual(by_title["Milk"]["category"], "Groceries")
-            self.assertEqual(by_title["Light bulbs"]["category"], "Other")
-            self.assertEqual(by_title["Screws"]["category"], "Other")  # bought history is categorised too
+            # then the aisle fill re-reads every title, bought history included
+            self.assertEqual((by_title["Light bulbs"]["category"], by_title["Light bulbs"]["store"]),
+                             ("Home Improvement", "Home Depot"))
+            self.assertEqual(by_title["Screws"]["aisle"], "Hardware & Tools")
             self.assertEqual([r["title"] for r in shop.items()], ["Milk", "Bread", "Light bulbs"])
-            self.assertEqual([s["name"] for s in shop.stores()], ["Real Canadian Superstore", "Costco"])
+            self.assertEqual([s["name"] for s in shop.stores()], ["Real Canadian Superstore", "Costco", "Home Depot", "IKEA", "Best Buy"])
+        finally:
+            store.close()
+
+    def test_fill_aisles_once(self):
+        """Items from before 2026-10-29 took the default store and no aisle;
+        the first start after reads their titles, and only once."""
+        path = str(Path(self.tmp.name) / "fill.db")
+        store = Store(path)
+        with store.tx() as db:
+            for title, category, shop_at, aisle in [("Shrubs", "Other", "Real Canadian Superstore", ""),
+                                                    ("Oat milk", "Groceries", "Real Canadian Superstore", ""),
+                                                    ("Frozen berries", "Groceries", "Costco", ""),
+                                                    ("Dog food", "Pet Supplies", "Real Canadian Superstore", "Pantry"),
+                                                    ("Something new", "Groceries", "Real Canadian Superstore", "")]:
+                db.execute("INSERT INTO items(title, list, category, store, aisle, created_at, updated_at)"
+                           " VALUES (?, 'Groceries', ?, ?, ?, '2026-10-20', '2026-10-20')", (title, category, shop_at, aisle))
+            db.execute("PRAGMA user_version=0")
+        store.close()
+        store = Store(path)
+        try:
+            got = {r["title"]: (r["category"], r["store"], r["aisle"]) for r in store.all("SELECT * FROM items")}
+            self.assertEqual(got, {
+                "Shrubs": ("Garden", "Home Depot", "Garden Centre"),
+                "Oat milk": ("Groceries", "Real Canadian Superstore", "Dairy & Eggs"),
+                "Frozen berries": ("Groceries", "Costco", "Frozen"),                 # a chosen store stays
+                "Dog food": ("Pet Supplies", "Real Canadian Superstore", "Pantry"),  # so do a chosen category and aisle
+                "Something new": ("Groceries", "Real Canadian Superstore", "")})
+            with store.tx() as db:
+                db.execute("UPDATE items SET aisle='' WHERE title='Oat milk'")
+        finally:
+            store.close()
+        store = Store(path)
+        try:
+            self.assertEqual(store.one("SELECT aisle FROM items WHERE title='Oat milk'")["aisle"], "")   # not again
         finally:
             store.close()
 
@@ -669,8 +738,13 @@ class Api(Base):
             self.assertEqual(c.get("/api/tasks").status_code, 403)
             self.assertEqual(c.get("/api/tasks", headers={"X-Tasks-Request": "1"}).status_code, 200)
             boot = c.get("/api/bootstrap", headers={"X-Tasks-Request": "1"}).json()
-            self.assertEqual(boot["shopping"]["stores"], ["Real Canadian Superstore", "Costco"])
+            self.assertEqual(boot["shopping"]["stores"], ["Real Canadian Superstore", "Costco", "Home Depot", "IKEA", "Best Buy"])
             self.assertIn("Deli & Prepared", boot["shopping"]["aisles"]["Costco"])
+            hdr = {"X-Tasks-Request": "1"}
+            made = c.post("/api/shopping/stores", headers=hdr, json={"name": "Canadian Tire"}).json()
+            self.assertEqual((made["store"], made["stores"][-1]), ("Canadian Tire", "Canadian Tire"))
+            self.assertEqual(c.get("/api/shopping/stores", headers=hdr).json()["stores"], made["stores"])
+            self.assertEqual(c.post("/api/shopping/stores", headers=hdr, json={"name": ""}).status_code, 400)
             self.assertEqual(c.post("/hooks/dog-alarm", json={}).status_code, 401)
             auth = {"Authorization": f"Bearer {TOKEN}"}
             r = c.post("/api/tasks", headers=auth, json={"title": "Meds", "priority": "p0", "due": "2026-10-19",

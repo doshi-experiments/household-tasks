@@ -35,7 +35,7 @@ The household's task and shopping service, running live as the Dockge stack `/op
 ## Commands
 
 ```bash
-docker compose build tasks && docker run --rm --network none tasks-tasks python -m unittest discover tests   # 70 offline tests
+docker compose build tasks && docker run --rm --network none tasks-tasks python -m unittest discover tests   # 77 offline tests
 docker compose up -d --build tasks
 docker compose logs --since=30m tasks | grep -E 'sent|dry-run|failed|WARNING'
 T=$(grep ^TASKS_API_TOKEN= .env | cut -d= -f2-)
@@ -51,6 +51,7 @@ Visual checks: screenshots of the live pages with headless Chromium (a throwaway
 - **`app/tasks.py`**: the task rows. Create, patch, complete, skip, snooze; `serialize` adds `state`, `eff_due`, `occurrence`, `schedule_text`. Listeners fire after commits (the scheduler uses them to clear pushes, flip the Dog Meds switch and refresh HA's calendar).
 - **`app/scheduler.py`**: one asyncio minute tick. Alarm pushes, nagging repeats and escalations (`nag_push`, in the day's voice, plus `roll_over` skipping a nagging task's missed day at midnight), High-overdue pushes, morning and evening summaries, the spoken fallback. Every send goes through `deliver` and the `notifications` ledger (unique per task, kind, day and channel).
 - **`app/voices.py`**: the house's voices, one a day (`voice_of_day`): fixed lines for every reminder, summary head and button; `Today.line` swaps in a one-off task's stored HA-written line (`voice_lines`, written by `Scheduler.prepare_lines` from 05:00).
+- **`app/aisles.py`**: pure shopping rules. `classify(title)` gives a department; departments give the category, `CATEGORY_STORES` the usual store, and `LAYOUTS` each store's aisles (`GENERIC_LAYOUT` for stores with none). Unit-tested in `tests/test_aisles.py`. `app/shopping.py` fills blanks from it.
 - **`app/web.py`**: FastAPI routes, auth middleware, hooks for HA, `/calendar.ics`, and the built SPA.
 - **`app/store.py`**: SQLite schema; `_migrate` applies schema changes on start. Add new migrations there, never by hand.
 - **`app/ha.py`, `app/bot.py`**: Home Assistant REST (notification hub script, speech, switches, calendars) and ingest-bot's `/tasks-message`.

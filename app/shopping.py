@@ -4,29 +4,18 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Callable
 
+from .aisles import (AISLES, CATEGORIES as ITEM_CATEGORIES, DEFAULT_AISLES, DEFAULT_CATEGORY, DEFAULT_STORE,
+                     aisle_for, aisles_for, category_of, classify, department_in, store_for)
 from .store import Store
 from .tasks import TaskError
 
 KEEP_BOUGHT_DAYS = 90
 
 # Every item carries a category (groceries or not), a store and an aisle.
-# Unknown categories coerce to Other; unknown stores are created on the fly
-# ("buy tarp from home depot" via the bot adds Home Depot); unknown aisles
-# coerce to '' against the item's store.
-ITEM_CATEGORIES = ["Groceries", "Home Improvement", "Pharmacy & Health", "Pet Supplies", "Electronics", "Other"]
-DEFAULT_CATEGORY = "Groceries"
-DEFAULT_STORE = "Real Canadian Superstore"
-AISLES = {
-    "Real Canadian Superstore": ["Produce", "Bakery", "Deli", "Dairy & Eggs", "Meat & Seafood", "Frozen",
-                                 "Pantry", "Snacks", "Beverages", "Health & Beauty", "Household", "Other"],
-    "Costco": ["Produce", "Bakery", "Deli & Prepared", "Dairy", "Meat & Seafood", "Frozen", "Pantry & Snacks",
-               "Beverages", "Health & Beauty", "Household", "Electronics", "Clothing", "Other"],
-}
-DEFAULT_AISLES = ["Food", "Household", "Health", "Other"]
-
-
-def aisles_for(store: str) -> list[str]:
-    return AISLES.get(store, DEFAULT_AISLES)
+# Left out, all three follow from the title (aisles.classify: shrubs are
+# Garden, so Home Depot, Garden Centre). Unknown categories coerce to Other;
+# unknown stores are created on the fly ("buy tarp from home depot" via the
+# bot adds Home Depot); unknown aisles coerce to '' against the item's store.
 
 
 class Lists:
@@ -112,6 +101,14 @@ class Shopping:
     def stores(self) -> list[dict]:
         return self.store.all("SELECT * FROM stores WHERE archived=0 ORDER BY sort, name")
 
+    def add_store(self, name: str) -> str:
+        if not str(name or "").strip():
+            raise TaskError(400, "A store needs a name.")
+        with self.store.tx() as db:
+            found = self._store(db, name)
+            db.execute("UPDATE stores SET archived=0 WHERE name=?", (found,))
+        return found
+
     @staticmethod
     def _category(value) -> str:
         v = str(value or "").strip()
@@ -135,6 +132,13 @@ class Shopping:
     def _aisle(value, store: str) -> str:
         v = str(value or "").strip()
         return next((a for a in aisles_for(store) if a.lower() == v.lower()), "")
+
+    @staticmethod
+    def _moved_aisle(row: dict, store: str) -> str:
+        """The item's aisle at another store: the same name if it has one, else
+        the one that keeps the same department, else where its title says."""
+        dept = department_in(row["aisle"], row["store"]) or classify(row["title"])
+        return Shopping._aisle(row["aisle"], store) or aisle_for(dept, store)
 
     def get(self, item_id: int) -> dict:
         row = self.store.one("SELECT * FROM items WHERE id=?", (item_id,))
@@ -161,7 +165,10 @@ class Shopping:
                 if not title:
                     continue
                 lst = self._list(it.get("list"))
-                store = self._store(db, it.get("store"))
+                dept = classify(title)
+                category = self._category(it["category"]) if str(it.get("category") or "").strip() else category_of(dept)
+                store = self._store(db, it.get("store") or store_for(category))
+                aisle = self._aisle(it["aisle"], store) if str(it.get("aisle") or "").strip() else aisle_for(dept, store)
                 dup = db.execute("SELECT * FROM items WHERE bought_at IS NULL AND list=? AND store=?"
                                  " AND lower(title)=lower(?)", (lst, store, title)).fetchone()
                 if dup:
@@ -171,8 +178,7 @@ class Shopping:
                 cur = db.execute("INSERT INTO items(title, list, notes, added_by, position, source, created_at,"
                                  " updated_at, category, store, aisle) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                                  (title[:200], lst, str(it.get("notes") or ""), str(it.get("added_by") or ""), pos,
-                                  str(it.get("source") or ""), now, now, self._category(it.get("category")), store,
-                                  self._aisle(it.get("aisle"), store)))
+                                  str(it.get("source") or ""), now, now, category, store, aisle))
                 out.append({**dict(db.execute("SELECT * FROM items WHERE id=?", (cur.lastrowid,)).fetchone()),
                             "duplicate": False})
         return out
@@ -195,8 +201,8 @@ class Shopping:
                 updates["store"] = store
             if "aisle" in body:
                 updates["aisle"] = self._aisle(body["aisle"], store)
-            elif store != row["store"] and self._aisle(row["aisle"], store) != row["aisle"]:
-                updates["aisle"] = ""   # the old aisle isn't one of the new store's
+            elif store != row["store"]:
+                updates["aisle"] = self._moved_aisle(row, store)
             if not updates:
                 return row
             updates["updated_at"] = self._now()

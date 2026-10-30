@@ -5,6 +5,8 @@ import sqlite3
 import threading
 from contextlib import contextmanager
 
+from . import aisles
+
 SCHEMA = """
 PRAGMA foreign_keys=ON;
 CREATE TABLE IF NOT EXISTS categories (
@@ -102,8 +104,9 @@ HOMELAB_PROJECTS = [
 SHOPPING_LISTS = [
     ("Groceries", "Everything we need to buy, from any store"),
 ]
-# Seed stores; anyone naming a new store on an item adds it on the fly.
-STORES = ["Real Canadian Superstore", "Costco"]
+# Seed stores (the default and each category's usual one); anyone naming a
+# new store on an item adds it on the fly.
+STORES = ["Real Canadian Superstore", "Costco", "Home Depot", "IKEA", "Best Buy"]
 
 
 class Store:
@@ -139,7 +142,9 @@ class Store:
         2026-10-26: a task can nag (repeat its reminder every N minutes on the day
         it's due) and escalate (critical pushes to more people from a set time).
         2026-10-27: voice_lines (a new table, so CREATE IF NOT EXISTS covers it)
-        holds the day's HA-written reminder lines for one-off tasks."""
+        holds the day's HA-written reminder lines for one-off tasks.
+        2026-10-29 (user_version 1): items that took the defaults get the
+        category, store and aisle their title implies (_fill_aisles)."""
         cols = {r[1] for r in self.db.execute("PRAGMA table_info(tasks)")}
         tg_cols = {r[1] for r in self.db.execute("PRAGMA table_info(telegram_messages)")}
         cat_cols = {r[1] for r in self.db.execute("PRAGMA table_info(categories)")}
@@ -178,6 +183,30 @@ class Store:
                 db.execute("UPDATE shopping_lists SET archived=1 WHERE name='Everything Else'")
                 db.execute("UPDATE shopping_lists SET hint='Everything we need to buy, from any store'"
                            " WHERE name='Groceries'")
+            if db.execute("PRAGMA user_version").fetchone()[0] < 1:
+                self._fill_aisles(db)
+                db.execute("PRAGMA user_version=1")
+
+    @staticmethod
+    def _fill_aisles(db):
+        """Once: until 2026-10-29 nothing set an aisle and every item without a
+        named store went to the default one. Re-read each title: a Groceries or
+        Other item takes the category its title implies, an item at the default
+        store moves to that category's store, and a blank aisle is filled in.
+        A category, store or aisle someone chose (anything else) is kept."""
+        for i, name in enumerate(STORES):
+            db.execute("INSERT OR IGNORE INTO stores(name, sort) VALUES (?,?)", (name, i))
+        rows = db.execute("SELECT id, title, category, store, aisle FROM items").fetchall()
+        for item_id, title, category, store, aisle in rows:
+            dept = aisles.classify(title)
+            if not dept:
+                continue
+            if category in ("Groceries", "Other"):
+                category = aisles.category_of(dept)
+            if store == aisles.DEFAULT_STORE:
+                store = aisles.store_for(category)
+            aisle = aisle or aisles.aisle_for(dept, store)
+            db.execute("UPDATE items SET category=?, store=?, aisle=? WHERE id=?", (category, store, aisle, item_id))
 
     @contextmanager
     def tx(self):
