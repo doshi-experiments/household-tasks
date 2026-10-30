@@ -4,6 +4,9 @@
   product in Loblaw's catalogue by searching the first store and scoring the
   results (brand, the label's words, the staple's word, the size when given).
   An unsure match stays unlinked rather than wrong.
+- autopick(): an item at a Loblaw store that nobody named a product for gets
+  one picked (pick_plain: the plainest product carrying its word, "2% Regular
+  Milk" for milk), which becomes the word's usual until someone names another.
 - refresh(): the linked products' prices at every configured store, by code,
   weekly (PRICES_REFRESH, Thursday morning when the flyer week starts) and
   from the Shopping tab's button (the list only, at most hourly).
@@ -27,7 +30,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Callable
 
 from .pcx import Pcx, PcxBlocked, PcxError
-from .staples import Staples, norm
+from .staples import Staples, allowed_edits, distance, norm
 from .store import Store
 from .tasks import TaskError
 
@@ -121,6 +124,37 @@ def pick(label: str, staple: str, cands: list[dict]) -> tuple[dict, float] | Non
         if s is not None and (best is None or s > best[1]):
             best = (c, s)
     return best
+
+
+def _near(a: str, b: str) -> bool:
+    return bool(a and b) and a[0] == b[0] and distance(a, b) <= allowed_edits(min(len(a), len(b)))
+
+
+def _covers(words: list[str], have: list[str]) -> bool:
+    """Every word of the title is in the product's words, typos allowed, or the
+    whole title is (spaces aside: "bana ganush" in "Baba Ganoush")."""
+    flat = "".join(words)
+    if any(_near(flat, "".join(have[i:i + n])) for i in range(len(have)) for n in (1, 2, 3)):
+        return True
+    return all(any(_near(w, h) for h in have) for w in words)
+
+
+def pick_plain(title: str, cands: list[dict]) -> dict | None:
+    """For a word nobody named a product for ("milk"): the in-stock product
+    carrying it with the fewest other words in its name ("2% Regular Milk"
+    before "Vanilla Protein Shake Milk"), Loblaw's order on a tie."""
+    words = norm(title).split()
+    best = None
+    for i, c in enumerate(cands):
+        if not words or not c.get("in_stock", True) or c.get("price_cents") is None:
+            continue
+        name = norm(c.get("name") or "").split()
+        if not _covers(words, norm(f"{c.get('brand') or ''} {c.get('name') or ''}").split()):
+            continue
+        key = (sum(not any(_near(w, n) for w in words) for n in name), i)
+        if best is None or key < best[0]:
+            best = (key, c)
+    return best[1] if best else None
 
 
 def multibuy(deal_text: str | None, deal_cents: int | None) -> str | None:
@@ -239,16 +273,63 @@ class Prices:
             except Exception:
                 log.exception("matching product %s failed", pid)
 
+    # ---------------------------------------------------------- picking for plain items
+    def _needs_pick(self, items: list[dict]) -> list[int]:
+        """Open items at a Loblaw store with no product, unless nothing fitted their word this past week."""
+        tried = self._get("prices.unpicked", {})
+        since = (self.clock() - CATCH_UP).astimezone(timezone.utc).isoformat(timespec="seconds")
+        return [i["id"] for i in items if not i.get("bought_at") and not i.get("product_id")
+                and i.get("store") in STORE_BANNER and tried.get(norm(i["title"]), "") < since]
+
+    def autopick(self, item_id: int) -> dict | None:
+        """Pick a catalogue product for a plain item and price it; the pick, or None."""
+        item = self.store.one("SELECT * FROM items WHERE id=?", (item_id,))
+        if not (self.enabled and item) or item["product_id"]:
+            return None
+        banner, sid = self.stores[0]
+        c = pick_plain(item["title"], self.pcx.search(banner, sid, item["title"]))
+        if not c:
+            tried = self._get("prices.unpicked", {})
+            tried[norm(item["title"])] = self._utc()
+            self._set("prices.unpicked", tried)
+            log.info("nothing in the catalogue fits %r", item["title"])
+            return None
+        pid = self.staples.adopt(item_id, c)
+        p = self.staples.product(pid)
+        if p and p["code"] == c["code"]:
+            self.record(banner, c)
+            for other, osid in self.stores[1:]:
+                got = self.pcx.product(other, osid, c["code"])
+                if got:
+                    self.record(other, got)
+        log.info("picked %r for %r", c["name"], item["title"])
+        return c
+
+    def _work(self, product_ids: list[int], item_ids: list[int]):
+        self._link_all(product_ids)
+        for iid in item_ids:
+            try:
+                self.autopick(iid)
+            except PcxBlocked as e:
+                self._blocked(str(e))
+                return
+            except PcxError as e:
+                log.warning("couldn't pick for item %s yet: %s", iid, e)
+            except Exception:
+                log.exception("picking for item %s failed", iid)
+
     def link_pending(self, items: list[dict], budget: float = LINK_BUDGET) -> None:
-        """Match the never-tried products of items at a Loblaw store, waiting up to
-        budget seconds; anything slower finishes in the background."""
+        """Match the never-tried products of items at a Loblaw store, and pick one
+        for items without, waiting up to budget seconds; anything slower
+        finishes in the background."""
         if not self.enabled or self._get("prices.status", {}).get("blocked"):
             return
         ids = list(dict.fromkeys(i["product_id"] for i in items if i.get("product_id") and i.get("store") in STORE_BANNER))
         todo = [pid for pid in ids if (p := self.staples.product(pid)) and not p["linked_at"]]
-        if not todo:
+        picks = self._needs_pick(items)
+        if not (todo or picks):
             return
-        t = threading.Thread(target=self._link_all, args=(todo,), daemon=True, name="prices-link")
+        t = threading.Thread(target=self._work, args=(todo, picks), daemon=True, name="prices-link")
         t.start()
         t.join(budget)
 
@@ -282,12 +363,19 @@ class Prices:
                 "SELECT DISTINCT sp.id FROM items i JOIN staple_products sp ON sp.id=i.product_id"
                 " WHERE i.bought_at IS NULL AND sp.linked_at IS NULL AND i.store IN (%s)" % ",".join("?" * len(BANNERS)),
                 tuple(BANNERS.values()))]
-            self._link_all(unlinked)
+            self._work(unlinked, self._needs_pick(self.store.all("SELECT * FROM items WHERE bought_at IS NULL")))
+            if self._get("prices.status", {}).get("blocked"):
+                return {"status": "blocked", "why": self._get("prices.status")["blocked"]["why"]}
             codes = self._codes(scope)
             got = {b: 0 for b, _ in self.stores}
             failed = {b: "" for b, _ in self.stores}
+            recent = (self.clock() - timedelta(minutes=30)).astimezone(timezone.utc).isoformat(timespec="seconds")
             for code in codes:
                 for banner, sid in self.stores:
+                    if self.store.one("SELECT 1 FROM price_obs WHERE code=? AND banner=? AND observed_at>=?",
+                                      (code, banner, recent)):
+                        got[banner] += 1   # just priced while matching or picking
+                        continue
                     try:
                         p = self.pcx.product(banner, sid, code)
                     except PcxBlocked as e:
@@ -326,7 +414,7 @@ class Prices:
         if self.running:
             raise TaskError(409, "Already checking prices.")
         self._set("prices.last_manual", self._utc())
-        n = len(self._codes("list"))
+        n = len(self._codes("list")) + len(self._needs_pick(self.store.all("SELECT * FROM items WHERE bought_at IS NULL")))
         threading.Thread(target=self._safe_refresh, args=("list",), daemon=True, name="prices-refresh").start()
         return {"started": True, "products": n, "eta_seconds": round(n * len(self.stores) * (self.pcx.gap + 0.5))}
 

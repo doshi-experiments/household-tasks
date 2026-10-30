@@ -10,8 +10,9 @@ const weekday = day => (day ? DAYS[new Date(`${day}T12:00:00`).getDay()] : '');
 const unitPrice = q => (q.unit_cents == null || !q.unit ? ''
   : `${money(q.unit_cents)}/${q.unit_qty && q.unit_qty !== 1 ? `${q.unit_qty} ` : ''}${q.unit}`);
 
-// "Natrel 2%, 4 l": what the household calls it, plus the matched size.
-export const productText = p => [p.label, p.linked && p.size].filter(Boolean).join(', ');
+// "Natrel 2%, 4 l": what the household calls it, plus the matched size. A product
+// Tasks picked itself says so; naming one on Telegram replaces it.
+export const productText = p => (p.auto ? 'Picked: ' : '') + [p.label, p.linked && p.size].filter(Boolean).join(', ');
 
 function DealBadge({q}) {
   if (q.deal?.multibuy) return <Badge tone="info">{q.deal.multibuy}</Badge>;

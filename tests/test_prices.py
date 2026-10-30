@@ -16,7 +16,7 @@ import httpx
 
 from app.config import Config, Person
 from app.pcx import Pcx, PcxBlocked, parse_product
-from app.prices import Prices, multibuy, next_slot, parse_slot, pick, size_of
+from app.prices import Prices, multibuy, next_slot, parse_slot, pick, pick_plain, size_of
 from app.shopping import Shopping
 from app.store import Store
 from app.tasks import TaskError
@@ -105,6 +105,16 @@ class Matching(unittest.TestCase):
     def test_a_brand_alone_can_match_without_the_staple_word(self):
         c, _ = pick("Golden Mill", "atta", [parse_product(ATTA)])
         self.assertEqual(c["code"], "1005_EA")
+
+    def test_picking_for_a_plain_word(self):
+        shake = parse_product(raw("1006_EA", "Vanilla Protein Shake Milk", "Shake Co", "414 ml", 4.75))
+        dip = parse_product(raw("1007_EA", "Baba Ganoush Dip", "Mezze", "227 g", 4.99))
+        milks = [shake, parse_product(MILK_B), parse_product(MILK_A)]
+        self.assertEqual(pick_plain("milk", milks)["code"], "1001_EA")          # fewest other words
+        self.assertEqual(pick_plain("Bana ganush", [dip])["code"], "1007_EA")    # typo and spacing
+        self.assertIsNone(pick_plain("chips", milks))
+        out = parse_product(raw("1008_EA", "Milk", "X", "1 l", 2.0, stock="OUT_OF_STOCK"))
+        self.assertIsNone(pick_plain("milk", [out]))
 
     def test_unsure_is_no_match(self):
         cands = [parse_product(p) for p in (MILK_A, MILK_B, CHOC)]
@@ -249,8 +259,31 @@ class Service(unittest.TestCase):
         self.clock.when += timedelta(days=11)
         self.assertEqual(self.prices.latest("1001_EA"), {})
 
+    def test_a_plain_item_gets_the_plainest_product_picked(self):
+        [item] = self.add("Milk")
+        self.assertEqual((item["staple"], item["product"]["code"], item["product"]["auto"]), ("Milk", "1001_EA", True))
+        self.assertEqual(item["product"]["label"], "Valley Farm 2% Regular Milk")
+        self.assertIn(str(item["id"]), self.prices.view(self.shop.items())["items"])
+
+    def test_naming_a_product_replaces_a_pick_without_asking(self):
+        [item] = self.add("milk")
+        self.shop.buy(item["id"])
+        [named] = self.add("milk", "Natrel 2%")
+        self.assertTrue(named["product"]["code"] == "1002_EA")
+        made = self.shop.add([{"title": "milk", "product": "Natrel 2%"}])   # the same again: nothing to ask
+        self.assertTrue(made[0]["duplicate"])
+        self.shop.buy(named["id"])
+        self.assertEqual(self.add("milk")[0]["product"]["label"], "Natrel 2%")
+
+    def test_nothing_fitting_is_not_searched_again_this_week(self):
+        self.add("unicorn steaks")
+        searches = [c for c in self.pcx.calls if c[0] == "search"]
+        self.add("Unicorn steak")   # a second one, another day: still marked as tried
+        self.assertEqual([c for c in self.pcx.calls if c[0] == "search"], searches)
+
     def test_refresh_checks_listed_products_at_every_store(self):
         self.add("milk", "Natrel 2%")
+        self.clock.when += timedelta(hours=1)   # prices found while matching count as fresh for 30 minutes
         self.pcx.calls.clear()
         self.assertEqual(self.prices.refresh("list")["status"], "ok")
         self.assertEqual(sorted(c[1] for c in self.pcx.calls if c[0] == "product"), ["nofrills", "superstore"])
@@ -258,6 +291,7 @@ class Service(unittest.TestCase):
 
     def test_a_refused_refresh_pauses_prices(self):
         self.add("milk", "Natrel 2%")
+        self.clock.when += timedelta(hours=1)
         self.pcx.fail = PcxBlocked("HTTP 401")
         self.assertEqual(self.prices.refresh("all")["status"], "blocked")
         self.assertIn("401", self.prices.view([])["status"]["blocked"]["why"])

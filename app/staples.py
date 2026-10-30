@@ -115,7 +115,7 @@ class Staples:
         if not p:
             return None
         return {"id": p["id"], "label": p["label"], "code": p["code"], "catalogue_name": p["catalogue_name"],
-                "size": p["size"], "linked": bool(p["code"]), "tried": bool(p["linked_at"])}
+                "size": p["size"], "linked": bool(p["code"]), "tried": bool(p["linked_at"]), "auto": bool(p.get("auto"))}
 
     def decorate(self, rows: list[dict]) -> list[dict]:
         """Items with their staple's name and product attached."""
@@ -170,7 +170,9 @@ class Staples:
             return out
         pid = self._product_for(db, staple["id"], product)
         out["product_id"] = pid
-        if not usual:
+        auto = usual and db.execute("SELECT auto FROM staple_products WHERE id=?", (usual,)).fetchone()[0]
+        if not usual or (auto and pid != usual):
+            # nobody chose the usual yet (or Tasks picked it itself): the named one wins, no question
             self._set_usual(db, staple["id"], pid)
             out["learned"] = True
         elif pid != usual:
@@ -208,6 +210,30 @@ class Staples:
                        (staple["id"], pid, self._now(), item_id))
             row = dict(db.execute("SELECT * FROM items WHERE id=?", (item_id,)).fetchone())
         return {**self.decorate([row])[0], "usual_changed": usual_changed}
+
+    def adopt(self, item_id: int, cand: dict) -> int | None:
+        """A catalogue product Tasks picked for a plain item ("milk" -> a 2% milk):
+        it goes on the item and becomes the word's usual unless one was chosen.
+        Returns the product id, or None when the item no longer needs one."""
+        label = cand["name"] if cand["brand"].lower() in cand["name"].lower() else f"{cand['brand']} {cand['name']}".strip()
+        with self.store.tx() as db:
+            item = db.execute("SELECT * FROM items WHERE id=?", (item_id,)).fetchone()
+            if not item or item["product_id"] or item["bought_at"]:
+                return None
+            row = db.execute("SELECT * FROM staples WHERE id=?", (item["staple_id"],)).fetchone() if item["staple_id"] else None
+            staple = dict(row) if row else (self.find(db, item["title"])[0] or self._staple_for(db, item["title"]))
+            if staple["default_product_id"]:
+                pid = staple["default_product_id"]
+            else:
+                pid = self._product_for(db, staple["id"], label)
+                db.execute("UPDATE staple_products SET code=?, catalogue_name=?, brand=?, size=?, image=?, link=?,"
+                           " confidence=0, linked_at=?, auto=1 WHERE id=?",
+                           (cand["code"], cand["name"], cand["brand"], cand["size"], cand["image"], cand["link"],
+                            self._now(), pid))
+                self._set_usual(db, staple["id"], pid)
+            db.execute("UPDATE items SET staple_id=?, product_id=?, updated_at=? WHERE id=?",
+                       (staple["id"], pid, self._now(), item_id))
+        return pid
 
     def settle(self, item: dict) -> dict:
         """After catalogue matching: a named product that turned out to be the

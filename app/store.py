@@ -90,7 +90,7 @@ CREATE TABLE IF NOT EXISTS staple_products (
   staple_id INTEGER NOT NULL REFERENCES staples(id) ON DELETE CASCADE,
   label TEXT NOT NULL, norm_label TEXT NOT NULL,
   code TEXT, catalogue_name TEXT, brand TEXT, size TEXT, image TEXT, link TEXT,
-  confidence REAL, linked_at TEXT,
+  confidence REAL, linked_at TEXT, auto INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
   UNIQUE (staple_id, norm_label));
 CREATE TABLE IF NOT EXISTS price_obs (
@@ -169,7 +169,9 @@ class Store:
         category, store and aisle their title implies (_fill_aisles).
         2026-10-29: staples, staple_products and price_obs (new tables, so
         CREATE IF NOT EXISTS covers them); an item points at its staple and
-        product (staple_id, product_id; NULL for a plain item)."""
+        product (staple_id, product_id; NULL for a plain item).
+        2026-10-29: staple_products.auto marks a product Tasks picked itself
+        from the catalogue for a word nobody had named a product for."""
         cols = {r[1] for r in self.db.execute("PRAGMA table_info(tasks)")}
         tg_cols = {r[1] for r in self.db.execute("PRAGMA table_info(telegram_messages)")}
         cat_cols = {r[1] for r in self.db.execute("PRAGMA table_info(categories)")}
@@ -211,6 +213,8 @@ class Store:
             if "staple_id" not in item_cols:
                 db.execute("ALTER TABLE items ADD COLUMN staple_id INTEGER")
                 db.execute("ALTER TABLE items ADD COLUMN product_id INTEGER")
+            if "auto" not in {r[1] for r in db.execute("PRAGMA table_info(staple_products)")}:
+                db.execute("ALTER TABLE staple_products ADD COLUMN auto INTEGER NOT NULL DEFAULT 0")
             if db.execute("PRAGMA user_version").fetchone()[0] < 1:
                 self._fill_aisles(db)
                 db.execute("PRAGMA user_version=1")
