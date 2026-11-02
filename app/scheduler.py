@@ -237,12 +237,13 @@ class Scheduler:
         return escalated, step, slot, int((slot - start).total_seconds() // 60)
 
     async def nag_push(self, now: datetime, force=False, dry=None, only_task=None, to=None) -> list[dict]:
-        """Nagging tasks: from the due time, the assignee's phone and the Telegram group
-        every nag.every minutes, each line more passive-aggressive than the last (in a
-        house voice picked for the day); from
-        nag.escalate_at, a critical push to nag.escalate_to and the group every
-        nag.escalate_every minutes, until someone taps Done. Night mode holds the
-        repeats but not the escalation: that is a critical alert and goes anyway."""
+        """Nagging tasks: from the due time, the assignee's phone every nag.every
+        minutes (everyone's phones and the Telegram group when unassigned), each line
+        more passive-aggressive than the last (in a house voice picked for the day);
+        from nag.escalate_at, a critical push to nag.escalate_to and the group every
+        nag.escalate_every minutes, until someone taps Done. The group only hears an
+        assigned task once others are pulled in. Night mode holds the repeats but
+        not the escalation: that is a critical alert and goes anyway."""
         out = []
         dry = (not self.cfg.notify_enabled) if dry is None else dry
         for t in self.tasks.open_tasks():
@@ -255,7 +256,8 @@ class Scheduler:
             if not escalated and self.quiet(now) and not force:
                 continue
             kind, bucket = ("escalate" if escalated else "nag"), slot.isoformat(timespec="minutes")
-            channels = (("push", "ha_push"), ("telegram", "telegram"))
+            group = escalated or not t["assignee"]
+            channels = (("push", "ha_push"),) + ((("telegram", "telegram"),) if group else ())
             if not force and all(self.sent(t["id"], f"{kind}_{k}", bucket, f"dry-{c}" if dry else c) for k, c in channels):
                 continue
             ids = t["nag"]["escalate_to"] if escalated else ([t["assignee"]] if t["assignee"] else [p.id for p in self.cfg.people])
@@ -268,6 +270,8 @@ class Scheduler:
             out.append(await self.deliver(t["id"], f"{kind}_push", bucket, "ha_push",
                                           lambda: self.ha.notify(send_to, words["title"], words["line"], level, f"task-{t['id']}", actions),
                                           f"{words['title']}: {words['line']} → {send_to}", force, dry))
+            if not group:
+                continue
             # the group gets the line alone, no task name
             out.append(await self.deliver(t["id"], f"{kind}_telegram", bucket, "telegram",
                                           lambda: self._telegram(kind, bucket, "", words["telegram"],

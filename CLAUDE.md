@@ -35,7 +35,7 @@ The household's task and shopping service, running live as the Dockge stack `/op
 ## Commands
 
 ```bash
-docker compose build tasks && docker run --rm --network none tasks-tasks python -m unittest discover tests   # 123 offline tests
+docker compose build tasks && docker run --rm --network none tasks-tasks python -m unittest discover tests   # 124 offline tests
 docker compose up -d --build tasks
 docker compose logs --since=30m tasks | grep -E 'sent|dry-run|failed|WARNING'
 T=$(grep ^TASKS_API_TOKEN= .env | cut -d= -f2-)

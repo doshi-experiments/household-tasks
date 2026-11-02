@@ -389,10 +389,10 @@ class Nagging(Base):
     def test_repeats_escalates_and_stops_when_done(self):
         s = self.sched()
         first = self.push(s, 9, 0)
-        self.assertEqual(len(first), 2)                                   # phone and the group
+        self.assertEqual([r["channel"] for r in first], ["ha_push"])      # the assignee's phone, not the group
         self.assertIn("['notify_alex']", first[0]["summary"])
         self.assertEqual(self.push(s, 9, 10), [])                         # once per slot
-        self.assertEqual(len(self.push(s, 9, 30)), 2)
+        self.assertEqual(len(self.push(s, 9, 30)), 1)
         s.quiet_state = (True, self.clock())
         self.assertEqual(self.push(s, 10, 0), [])                         # night mode holds the repeats
         esc = self.push(s, 12, 0)                                          # ...but not the escalation
@@ -404,6 +404,12 @@ class Nagging(Base):
         self.assertEqual(len(self.push(s, 13, 0)), 2)
         self.tasks.complete(self.t["id"], done_by="sam")
         self.assertEqual(self.push(s, 14, 0), [])
+
+    def test_unassigned_repeats_still_reach_the_group(self):
+        self.tasks.patch(self.t["id"], {"assignee": None})
+        first = self.push(self.sched(), 9, 0)
+        self.assertEqual([r["channel"] for r in first], ["ha_push", "telegram"])
+        self.assertIn("['notify_alex', 'notify_sam']", first[0]["summary"])
 
     def test_a_missed_day_rolls_over_at_midnight(self):
         s = self.sched()
