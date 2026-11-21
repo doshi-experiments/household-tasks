@@ -198,3 +198,7 @@ compose.yaml, Dockerfile, requirements.txt
 - **2026-10-18** — Dog-meds cutover: the old HA helpers' automations turned off; the feed-dogs reminder and the Dog Meds switch wired to this service; notifications on.
 - **2026-10-18** — Home Assistant (calendar, sensor, rest commands, notification actions, announce script) and Telegram (`/tasks-message`, task buttons) connected.
 - **2026-10-18** — Stack created.
+
+## Licence
+
+MIT, see [LICENSE](LICENSE).
