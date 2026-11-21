@@ -4,7 +4,7 @@ One place for the household's chores, one-off to-dos and shopping lists, plus a 
 
 - **App:** `https://tasks.<your-tailnet>.ts.net` (Tailscale sidecar) and `http://<TASKS_BIND_ADDR>:8040` on the LAN
 - **Runs on:** a Docker host, as the Dockge stack `/opt/stacks/tasks`
-- **Built with:** Python 3.14, FastAPI and SQLite; React 19 and Vite on the private design system `@doshi-experiments/design-system` 0.8.0 (Felt, signal red)
+- **Built with:** Python 3.14, FastAPI and SQLite; React 19 and Vite on the shared design system [`@doshi-experiments/design-system`](https://github.com/doshi-experiments/design-system) 0.9.0 (Felt, signal red)
 - **Talks to:** Home Assistant (`HA_URL`), the ingest-bot Telegram bot (`/opt/stacks/ingest-bot`)
 
 ## Using it
@@ -111,13 +111,13 @@ docker compose restart tasks                # after a .env change only
 docker compose logs --since=1h tasks | grep -E 'sent|dry-run|failed'
 ```
 
-Offline tests (123, no network): build, then
+Offline tests (no network): build, then
 
 ```bash
 docker run --rm --network none tasks-tasks python -m unittest discover tests
 ```
 
-The design system is a private package and is not in this repository. Building the frontend needs its tarball at `frontend/vendor/doshi-experiments-design-system-0.8.0.tgz` (from the design-system repo: `git archive` a release, then `npm pack`).
+The design system's tarball is not committed here. Building the frontend needs it at `frontend/vendor/doshi-experiments-design-system-0.9.0.tgz`: check out the 0.9.0 release of the public [design-system repo](https://github.com/doshi-experiments/design-system), `git archive` it, then `npm pack`.
 
 Frontend only (from `frontend/`, in the build's Node image):
 
@@ -159,7 +159,7 @@ Schema changes are made on start-up in `Store._migrate` (`app/store.py`).
 ```
 app/        FastAPI app, scheduler, schedule rules, HA and bot clients, calendar feed
 tests/      offline unit and API tests
-frontend/   React app; vendor/ is where the private design-system tarball goes (not committed)
+frontend/   React app; vendor/ is where the design-system tarball goes (not committed)
 ha/         Home Assistant pieces this stack relies on (see above)
 compose.yaml, Dockerfile, requirements.txt
 ```
