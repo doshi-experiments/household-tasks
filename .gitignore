@@ -16,5 +16,5 @@ __pycache__/
 migration-plan.md
 ha/configuration.yaml
 ha/local/
-# the design system is a private package; its tarball is never committed
+# the design-system tarball is built from its own repo, not committed here
 frontend/vendor/*.tgz
