@@ -14,6 +14,8 @@ What Household Tasks needs inside Home Assistant, as templates. Replace each `<P
 
 Automations and scripts go in through Home Assistant's config API, for example `POST /api/config/automation/config/<id>` with the JSON as the body, or by pasting them into the YAML editor.
 
+**Speech through your own script** (optional): if your house already routes speech through one script that picks the engine and voice, replace the `<TTS_ENGINE>` speech steps in `reminder_append_steps.json` and `tasks_announce.json` with a call to it (`<SPEAK_SCRIPT>`). It should take `message`, `speakers` and a way to play over music (an `announce` flag or similar). Keep the read-exactly lines in a plain, steady voice, since they carry the alarm tasks.
+
 The calendar is a Remote Calendar integration pointed at `http://<TASKS_HOST>:8040/calendar.ics`, labelled for whatever your summaries read.
 
 **Reminder lines for one-off tasks** (optional): set `VOICE_TEXT_SCRIPT` to a script that takes `prompt`, `fallback_text` and `custom_era` (1–6: the voice, as numbered in `app/voices.py`) and returns `{text, used_fallback}` as its response. The service calls it from 05:00 each day with `?return_response`, up to 30 s per line, and stores what it gets. Without it, every task uses the fixed lines.
